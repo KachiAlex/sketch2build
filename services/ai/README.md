@@ -6,7 +6,7 @@ Multi-modal AI service for architectural sketch-to-plan generation.
 
 ```
 src/
-  api/v1/          # FastAPI routes (generate, jobs, health, compliance, exports)
+  api/v1/          # FastAPI routes (generate, jobs, health, compliance, exports, explainability, regional, monitoring)
   models/
     vision/        # Sketch-to-Graph Encoder (CLIP + detection head)
     layout/        # Layout Diffusion Model (U-Net + graph conditioning)
@@ -21,12 +21,16 @@ src/
     rag_engine.py         # RAG question answering
     regulations_seed.py   # 34 curated regulations (IBC, ASHRAE, NFPA, ADA, Eurocode, Zoning)
     constrained_diffusion.py # Compliance-aware diffusion sampling
+  explainability/  # Design rationale engine
+    engine.py             # Per-room + building-level explanations (10 categories)
+  regional/        # Climate-specific design profiles
+    profiles.py           # 8 regional profiles (Nordic, Middle East, Tropical, Japan, etc.)
   training/
     data/          # Synthetic data generator, sketch warper, datasets
     utils/         # Metrics, visualization
     config/        # YAML training configs
-  inference/       # Pipeline orchestration (vision → layout → compliance → 3D)
-  services/        # Celery queue, storage
+  inference/       # Pipeline orchestration (vision → layout → compliance → 3D → explainability)
+  services/        # Celery queue, storage, monitoring (Prometheus metrics)
   config.py        # Pydantic settings
   main.py          # FastAPI entry point
 ```
@@ -85,6 +89,14 @@ docker-compose up --build
 | `/api/v1/compliance/regulations` | GET | List available regulations |
 | `/api/v1/exports/export` | POST | Export floor plan to IFC, DXF, or GLB |
 | `/api/v1/exports/3d-preview` | POST | Generate 2D axonometric preview from 3D model |
+| `/api/v1/explainability/explain` | POST | Generate design rationale report |
+| `/api/v1/regional/profiles` | GET | List regional design profiles |
+| `/api/v1/regional/profiles/{key}` | GET | Get specific regional profile |
+| `/api/v1/regional/apply` | POST | Apply regional profile to constraints |
+| `/api/v1/monitoring/metrics` | GET | Prometheus metrics endpoint |
+| `/api/v1/monitoring/health/detailed` | GET | Full health with GPU/model checks |
+| `/api/v1/monitoring/health/live` | GET | Liveness probe |
+| `/api/v1/monitoring/health/ready` | GET | Readiness probe |
 
 ## Environment Variables
 
@@ -107,7 +119,7 @@ docker-compose up --build
 - **Phase 2 (Layout Generation + Real Data)**: Complete — graph-based synthetic generator, RPlan/CubiCasa5K loaders, mixed training pipeline (training requires GPU)
 - **Phase 3 (Compliance)**: Complete — RAG engine with 34 regulations, validator with hard/soft constraints, constrained diffusion, compliance API v1
 - **Phase 4 (3D & Export)**: Complete — 3D extruder (room walls, multi-story), IFC/BIM export, 2D/3D DXF, binary GLB, 3D preview generation, exports API
-- **Phase 5 (Polish)**: Not started — explainability, regional fine-tuning, production deployment
+- **Phase 5 (Polish & Scale)**: Complete — explainability engine (10 categories, per-room rationale), 8 regional profiles (Nordic/Middle East/Tropical/Japan/etc.), Prometheus monitoring, RunPod/Vast.ai deployment configs
 
 ## Training
 
@@ -184,6 +196,10 @@ curl -X POST http://localhost:8000/api/v1/compliance/query \
 - Synthetic data generator now uses graph-based growth (House-GAN style) in `src/training/data/graph_generator.py`.
 - Compliance engine is fully implemented with RAG, validator, and constrained diffusion in `src/compliance/`.
 - 3D massing is fully implemented in `src/models/massing/` with IFC, DXF, and GLB exports.
+- Explainability engine generates per-room design rationale across 10 categories (natural light, ventilation, privacy, ergonomics, etc.).
+- 8 regional profiles cover Nordic, Middle East, Tropical, Japan, Australia, Continental, Arid, and Mountain climates.
+- Prometheus-compatible metrics at `/api/v1/monitoring/metrics` for production observability.
+- Deployment configs for RunPod and Vast.ai GPU workers in `deploy/deployment.yaml`.
 - The LLM generation step in RAG uses structured summaries; replace with fine-tuned Llama 3 8B or API call in production.
 - IFC export writes STEP-21 format compatible with Revit, ArchiCAD, Tekla.
 - GLB export writes binary GLTF 2.0 with mesh data for WebGL renderers (Three.js, Babylon.js).

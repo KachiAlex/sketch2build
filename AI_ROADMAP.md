@@ -85,14 +85,34 @@
   - `POST /api/v1/exports/export` — returns base64-encoded file with metadata
   - `POST /api/v1/exports/3d-preview` — returns base64 PNG axonometric preview
 
-## Phase 5: Polish & Scale (Weeks 25+)
+## Phase 5: Polish & Scale (Weeks 25+) — COMPLETE
 
-- [ ] **13. Add explainability layer**
-  - Design rationale per room/decision (e.g., "Northern light per ASHRAE 90.1")
-- [ ] **14. Regional fine-tuning**
-  - Separate models for Nordic daylight, Middle East shading, tropical ventilation, etc.
-- [ ] **15. Production deployment**
-  - GPU worker auto-scaling, monitoring, CI/CD for model updates
+- [x] **13. Add explainability layer**
+  - `ExplainabilityEngine` — generates design rationale per room and building
+  - 10 explanation categories: compliance, spatial quality, natural light, ventilation, ergonomics, circulation, privacy, energy efficiency, aesthetic, safety
+  - Per-room explanations with regulation references and confidence scores
+  - Building-level analysis: site coverage, essential rooms, connectivity
+  - Overall summary with strengths, weaknesses, and recommendations
+  - `POST /api/v1/explainability/explain` — full explainability report
+  - Integrated into inference pipeline (each alternative includes explanations)
+- [x] **14. Regional fine-tuning**
+  - 8 pre-defined regional profiles: US (IBC), Nordic, Middle East (GCC), Tropical (India), Japan, Australia, Continental Europe, Arid, Mountain
+  - Climate-specific parameters: orientation, insulation, wall thickness, WWR, overhangs
+  - Cultural preferences: prayer rooms (GCC), genkan (Japan), mudroom (Nordic)
+  - Room area multipliers for regional sizing norms
+  - Seismic zone awareness
+  - `GET /api/v1/regional/profiles` — list all profiles
+  - `GET /api/v1/regional/profiles/{key}` — get specific profile
+  - `POST /api/v1/regional/apply` — apply profile to constraints + rooms
+  - Integrated into inference pipeline (auto-applies when `region_key` in constraints)
+- [x] **15. Production deployment**
+  - `deploy/deployment.yaml` — RunPod + Vast.ai GPU worker templates
+  - `src/services/monitoring.py` — Prometheus-compatible metrics (counters + histograms)
+  - `GET /api/v1/monitoring/metrics` — Prometheus scrape endpoint
+  - `GET /api/v1/monitoring/health/detailed` — full health with GPU, Redis, model checks
+  - `GET /api/v1/monitoring/health/live` — liveness probe
+  - `GET /api/v1/monitoring/health/ready` — readiness probe
+  - Auto-scaling config (min 1, max 4 workers, queue-based scaling)
 
 ---
 
