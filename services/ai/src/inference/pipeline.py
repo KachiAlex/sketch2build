@@ -7,6 +7,8 @@ from src.inference import vision, layout
 from src.compliance.validator import ComplianceValidator
 from src.compliance.models import BuildingCode, ComplianceReport
 from src.models.massing.extruder import FloorPlanExtruder
+from src.explainability.engine import ExplainabilityEngine
+from src.regional.profiles import RegionalProfileManager
 
 logger = structlog.get_logger()
 
@@ -19,6 +21,8 @@ class DesignPipeline:
         self.layout_generator = layout.LayoutGenerator()
         self.compliance_validator = ComplianceValidator()
         self.extruder = FloorPlanExtruder()
+        self.explainability_engine = ExplainabilityEngine()
+        self.regional_manager = RegionalProfileManager()
 
     def run(
         self,
@@ -41,7 +45,15 @@ class DesignPipeline:
         else:
             graph = self._text_to_graph(description, constraints)
 
-        # Step 2: Generate layout(s)
+        # Step 2: Apply regional profile if specified
+        region_key = constraints.get("region_key") if constraints else None
+        if region_key:
+            profile = self.regional_manager.get_profile(region_key)
+            if profile:
+                constraints = self.regional_manager.apply_profile_to_constraints(profile, constraints)
+                logger.info("Regional profile applied", job_id=job_id, region=region_key, climate=profile.climate_zone.value)
+
+        # Step 3: Generate layout(s)
         code_enum = BuildingCode(compliance_standard) if compliance_standard in [e.value for e in BuildingCode] else None
         alternatives = []
         for i in range(generate_alternatives):
@@ -52,7 +64,7 @@ class DesignPipeline:
                 seed=i,
             )
 
-            # Step 3: Validate compliance
+            # Step 4: Validate compliance
             rooms = floor_plan.get("rooms", [])
             adjacency = floor_plan.get("adjacency", [])
             plot_width = floor_plan.get("plot_width", constraints.get("plot_width", 0) if constraints else 0)
@@ -85,7 +97,7 @@ class DesignPipeline:
                 "explanations": report.explanations,
             }
 
-            # Step 4: Generate 3D massing from floor plan
+            # Step 5: Generate 3D massing from floor plan
             building_3d = self.extruder.extrude_floor_plan(
                 rooms=rooms,
                 adjacency=adjacency,
@@ -101,16 +113,29 @@ class DesignPipeline:
             # Generate 3D preview image
             preview_3d = self.extruder.generate_3d_preview_image(building_3d, size=512)
 
+            # Step 6: Generate explainability report
+            building_orientation = constraints.get("preferred_orientation", 0.0) if constraints else 0.0
+            explain_report = self.explainability_engine.explain_design(
+                design_id=f"{job_id}_alt_{i}",
+                rooms=rooms,
+                adjacency=adjacency,
+                plot_width=plot_width,
+                plot_depth=plot_depth,
+                compliance_report=report,
+                building_orientation=building_orientation,
+            )
+
             alternatives.append({
                 "index": i,
                 "floor_plan": floor_plan,
                 "compliance": compliance_result,
                 "three_d_model": three_d_summary,
                 "preview_3d": preview_3d,
+                "explainability": explain_report.to_dict(),
                 "score": report.score,  # Use compliance score for ranking
             })
 
-        # Step 5: Rank and pick best alternative (highest compliance score)
+        # Step 7: Rank and pick best alternative (highest compliance score)
         alternatives.sort(key=lambda x: x["score"], reverse=True)
         best = alternatives[0] if alternatives else None
 
@@ -120,16 +145,17 @@ class DesignPipeline:
             "floor_plan": best["floor_plan"] if best else None,
             "three_d_model": best["three_d_model"] if best else None,
             "compliance": best["compliance"] if best else None,
+            "explainability": best["explainability"] if best else None,
             "alternatives": [
                 {
                     "index": alt["index"],
                     "floor_plan": alt["floor_plan"],
                     "compliance": alt["compliance"],
                     "three_d_model": alt["three_d_model"],
+                    "explainability": alt["explainability"],
                 }
                 for alt in alternatives
             ],
-            "explainability": [],  # TODO: Phase 5
         }
 
         logger.info("Design pipeline completed", job_id=job_id, alternatives=len(alternatives))

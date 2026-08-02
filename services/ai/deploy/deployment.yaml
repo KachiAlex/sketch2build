@@ -1,0 +1,86 @@
+# Production deployment configuration for RunPod / Vast.ai GPU workers
+# This file defines the deployment configuration for the AI inference service
+# on cloud GPU providers.
+
+# RunPod Pod Template
+runpod:
+  # GPU configuration
+  gpu:
+    type: "NVIDIA A100 80GB"  # or "NVIDIA L40S 48GB" for cost optimization
+    count: 1
+    # Alternative: "RTX 4090 24GB" for development/testing
+
+  # Container configuration
+  container:
+    image: "sketch2build/ai-service:latest"
+    dockerfile_path: "services/ai/docker/Dockerfile"
+    ports:
+      - 8000  # FastAPI
+      - 6379  # Redis (internal)
+
+  # Resource limits
+  resources:
+    cpu: 8
+    memory: "64GB"
+    disk: "200GB"
+    volume_mount: "/workspace"
+
+  # Environment variables (secrets injected at deploy time)
+  env:
+    - DATABASE_URL
+    - REDIS_URL
+    - CELERY_BROKER_URL
+    - CELERY_RESULT_BACKEND
+    - WANDB_API_KEY
+    - HF_TOKEN
+    - R2_ENDPOINT
+    - R2_BUCKET
+    - R2_ACCESS_KEY_ID
+    - R2_SECRET_ACCESS_KEY
+    - JWT_SECRET
+
+  # Auto-scaling
+  autoscaling:
+    min_workers: 1
+    max_workers: 4
+    scale_up_threshold: 5    # queued jobs
+    scale_down_threshold: 0  # idle workers
+    cooldown_seconds: 300
+
+  # Health checks
+  health_check:
+    endpoint: "/api/v1/health"
+    interval_seconds: 30
+    timeout_seconds: 10
+    unhealthy_threshold: 3
+
+# Vast.ai Template (alternative)
+vast_ai:
+  gpu:
+    type: "RTX 4090"
+    min_vram: 24
+    min_cuda: 12.1
+
+  container:
+    image: "sketch2build/ai-service:latest"
+    ports:
+      - "8000:8000"
+
+  resources:
+    disk: "100GB"
+    jupyter: false
+
+  onstart: |
+    cd /workspace && \
+    pip install -r services/ai/requirements.txt && \
+    cd services/ai && \
+    uvicorn src.main:app --host 0.0.0.0 --port 8000 --workers 4
+
+# Docker Compose for local GPU testing
+docker_compose:
+  file: "services/ai/docker/docker-compose.yml"
+  gpu: true
+  services:
+    - api
+    - worker
+    - redis
