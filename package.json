@@ -10,6 +10,7 @@
   "scripts": {
     "dev": "concurrently \"npm run dev -w apps/api\" \"npm run dev -w apps/web\" \"npm run dev -w apps/ai\"",
     "build": "npm run build -w packages/shared && npm run build -w apps/api && npm run build -w apps/web && npm run build -w apps/ai",
+    "vercel-build": "cd apps/api && npx prisma generate && cd ../.. && npm run build -w packages/shared && npm run build -w apps/web",
     "lint": "npm run lint -w apps/api && npm run lint -w apps/web && npm run lint -w apps/shared",
     "test": "npm run test -w apps/api && npm run test -w apps/web && npm run test -w apps/ai",
     "typecheck": "npm run typecheck -w apps/api && npm run typecheck -w apps/web && npm run typecheck -w apps/shared",

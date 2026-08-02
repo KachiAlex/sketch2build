@@ -147,11 +147,20 @@ export default function Sketch() {
     setIsUploading(true);
     setError(null);
     try {
-      const formData = new FormData();
-      formData.append("file", fileInputRef.current.files[0]);
-      formData.append("referenceLength", referenceLength);
-      formData.append("unit", unit);
-      const result = await api.upload(`/projects/${projectId}/sketch`, formData);
+      const file = fileInputRef.current.files[0];
+      const base64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve((reader.result as string).split(",")[1]);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+      const result = await api.post<{ job: { id: string; status: string } }>(`/sketch`, {
+        projectId,
+        fileData: base64,
+        fileType: file.type,
+        referenceLength: parseFloat(referenceLength),
+        unit,
+      });
       setUploadResult(result);
       setVectorGraph({
         walls: [
