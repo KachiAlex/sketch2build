@@ -6,11 +6,15 @@ Multi-modal AI service for architectural sketch-to-plan generation.
 
 ```
 src/
-  api/v1/          # FastAPI routes (generate, jobs, health, compliance)
+  api/v1/          # FastAPI routes (generate, jobs, health, compliance, exports)
   models/
     vision/        # Sketch-to-Graph Encoder (CLIP + detection head)
     layout/        # Layout Diffusion Model (U-Net + graph conditioning)
-    massing/       # 3D extrusion model (Phase 4)
+    massing/       # 3D extrusion + IFC/BIM + DXF + GLB exports
+      extruder.py          # Floor plan → 3D geometry (walls, rooms, multi-story)
+      ifc_export.py        # IFC-STEP BIM export (Revit/ArchiCAD compatible)
+      dxf_export.py        # 2D/3D AutoCAD DXF export
+      glb_export.py        # Binary GLTF 2.0 for WebGL (Three.js, Babylon.js)
   compliance/      # RAG engine + validator + constrained diffusion
     vector_store.py       # ChromaDB/FAISS regulation store
     validator.py          # Hard/soft constraint checking
@@ -79,6 +83,8 @@ docker-compose up --build
 | `/api/v1/compliance/check-requirement` | POST | Check if a value meets a code requirement |
 | `/api/v1/compliance/design-guidance` | POST | Get guidance for room types |
 | `/api/v1/compliance/regulations` | GET | List available regulations |
+| `/api/v1/exports/export` | POST | Export floor plan to IFC, DXF, or GLB |
+| `/api/v1/exports/3d-preview` | POST | Generate 2D axonometric preview from 3D model |
 
 ## Environment Variables
 
@@ -100,8 +106,8 @@ docker-compose up --build
 - **Phase 1 (Foundation)**: Complete — scaffolding, synthetic generator, training infra, vision encoder, layout diffusion, FastAPI/Celery
 - **Phase 2 (Layout Generation + Real Data)**: Complete — graph-based synthetic generator, RPlan/CubiCasa5K loaders, mixed training pipeline (training requires GPU)
 - **Phase 3 (Compliance)**: Complete — RAG engine with 34 regulations, validator with hard/soft constraints, constrained diffusion, compliance API v1
-- **Phase 4 (3D & Export)**: Not started
-- **Phase 5 (Polish)**: Not started
+- **Phase 4 (3D & Export)**: Complete — 3D extruder (room walls, multi-story), IFC/BIM export, 2D/3D DXF, binary GLB, 3D preview generation, exports API
+- **Phase 5 (Polish)**: Not started — explainability, regional fine-tuning, production deployment
 
 ## Training
 
@@ -177,5 +183,8 @@ curl -X POST http://localhost:8000/api/v1/compliance/query \
 - The diffusion model U-Net is currently a scaffold. The full architecture would include 4+ down/up blocks with attention at 16x16 and 8x8 resolutions.
 - Synthetic data generator now uses graph-based growth (House-GAN style) in `src/training/data/graph_generator.py`.
 - Compliance engine is fully implemented with RAG, validator, and constrained diffusion in `src/compliance/`.
-- 3D massing is stubbed in `src/inference/pipeline.py` and will be implemented in Phase 4.
+- 3D massing is fully implemented in `src/models/massing/` with IFC, DXF, and GLB exports.
 - The LLM generation step in RAG uses structured summaries; replace with fine-tuned Llama 3 8B or API call in production.
+- IFC export writes STEP-21 format compatible with Revit, ArchiCAD, Tekla.
+- GLB export writes binary GLTF 2.0 with mesh data for WebGL renderers (Three.js, Babylon.js).
+- DXF export writes AC1015 (R2000) format for AutoCAD import.
