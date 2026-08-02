@@ -2,13 +2,14 @@ import { S3Client, PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { v4 as uuidv4 } from "uuid";
 
-const endpoint = process.env.S3_ENDPOINT;
-const bucket = process.env.S3_BUCKET || "sketch2build";
-const region = process.env.S3_REGION || "us-east-1";
+const endpoint = process.env.S3_ENDPOINT || process.env.R2_ENDPOINT;
+const bucket = process.env.S3_BUCKET || process.env.R2_BUCKET || "sketch2build";
+const region = process.env.S3_REGION || "auto";
+const r2PublicUrl = process.env.R2_PUBLIC_URL;
 
 function getEndpoint() {
   if (!endpoint) {
-    throw new Error("S3_ENDPOINT environment variable is required");
+    throw new Error("S3_ENDPOINT or R2_ENDPOINT environment variable is required");
   }
   return endpoint;
 }
@@ -21,8 +22,8 @@ export function getS3Client(): S3Client {
       endpoint: getEndpoint(),
       region,
       credentials: {
-        accessKeyId: process.env.S3_ACCESS_KEY || "sketch2build",
-        secretAccessKey: process.env.S3_SECRET_KEY || "sketch2build",
+        accessKeyId: process.env.S3_ACCESS_KEY || process.env.R2_ACCESS_KEY_ID || "",
+        secretAccessKey: process.env.S3_SECRET_KEY || process.env.R2_SECRET_ACCESS_KEY || "",
       },
       forcePathStyle: true,
     });
@@ -46,6 +47,11 @@ export async function uploadFile(
       ContentType: contentType,
     })
   );
+
+  if (r2PublicUrl) {
+    const publicUrl = r2PublicUrl.replace(/\/$/, "") + "/" + key;
+    return { key, url: publicUrl };
+  }
 
   const url = await getSignedUrl(
     getS3Client(),
