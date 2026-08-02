@@ -1,0 +1,68 @@
+# Layout Diffusion Training Configuration
+# U-Net Diffusion Model for Floor Plan Generation
+
+model:
+  in_channels: 3
+  out_channels: 3
+  model_channels: 128
+  num_res_blocks: 2
+  attention_resolutions: [16, 8]
+  channel_mult: [1, 2, 4, 4]
+  num_heads: 8
+  cond_dim: 256
+  image_size: 256
+  num_train_timesteps: 1000
+
+training:
+  batch_size: 4  # Smaller batch due to larger model
+  epochs: 200
+  learning_rate: 1.0e-4
+  weight_decay: 0.01
+  warmup_steps: 1000
+  max_grad_norm: 1.0
+  save_every_n_epochs: 10
+  patience: 30
+  val_split: 0.1
+  generate_samples: true
+
+data:
+  data_dir: "/app/data"
+  datasets:
+    - synthetic
+    - rplan
+    - cubicasa
+  weights:
+    synthetic: 0.5
+    rplan: 0.3
+    cubicasa: 0.2
+  image_size: 256
+  max_rooms: 20
+
+noise_schedule:
+  type: "linear"
+  beta_start: 1.0e-4
+  beta_end: 0.02
+  num_timesteps: 1000
+
+optimizer:
+  type: "adamw"
+  lr: 1.0e-4
+  weight_decay: 0.01
+  betas: [0.9, 0.999]
+
+scheduler:
+  type: "cosine_with_warmup"
+  warmup_steps: 1000
+  total_steps: 200000
+
+logging:
+  use_wandb: true
+  wandb_project: "sketch2build-ai"
+  wandb_run_name: "layout_diffusion_full"
+  log_every_n_steps: 50
+  generate_samples_every_n_epochs: 10
+
+output:
+  output_dir: "/app/models/layout_diffusion"
+  save_best: true
+  save_periodic: true

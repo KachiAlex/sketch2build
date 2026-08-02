@@ -62,52 +62,237 @@ class GraphConditioningEncoder(nn.Module):
         return self.output_proj(pooled)
 
 
-class LayoutUNet(nn.Module):
-    """U-Net backbone for the layout diffusion model."""
+class AttentionBlock(nn.Module):
+    """Self-attention block for spatial features."""
+
+    def __init__(self, channels: int, num_heads: int = 8):
+        super().__init__()
+        self.norm = nn.GroupNorm(32, channels)
+        self.q = nn.Conv2d(channels, channels, 1)
+        self.k = nn.Conv2d(channels, channels, 1)
+        self.v = nn.Conv2d(channels, channels, 1)
+        self.proj_out = nn.Conv2d(channels, channels, 1)
+        self.num_heads = num_heads
+        self.scale = (channels // num_heads) ** -0.5
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        B, C, H, W = x.shape
+        h = self.norm(x)
+        q = self.q(h).reshape(B, self.num_heads, C // self.num_heads, H * W)
+        k = self.k(h).reshape(B, self.num_heads, C // self.num_heads, H * W)
+        v = self.v(h).reshape(B, self.num_heads, C // self.num_heads, H * W)
+
+        attn = torch.einsum("bhdn,bhem->bhnm", q, k) * self.scale
+        attn = attn.softmax(dim=-1)
+
+        out = torch.einsum("bhnm,bhdn->bhdn", attn, v)
+        out = out.reshape(B, C, H, W)
+        out = self.proj_out(out)
+        return x + out
+
+
+class DownBlock(nn.Module):
+    """Downsampling block: ResBlocks + optional attention + downsample."""
 
     def __init__(
         self,
-        in_channels: int = 3,      # RGB plan image
+        in_channels: int,
+        out_channels: int,
+        cond_dim: int,
+        num_res_blocks: int = 2,
+        use_attention: bool = False,
+        num_heads: int = 8,
+        downsample: bool = True,
+    ):
+        super().__init__()
+        self.res_blocks = nn.ModuleList()
+        self.attentions = nn.ModuleList()
+
+        for i in range(num_res_blocks):
+            ic = in_channels if i == 0 else out_channels
+            self.res_blocks.append(ResBlock(ic, cond_dim, out_channels))
+            if use_attention:
+                self.attentions.append(AttentionBlock(out_channels, num_heads))
+            else:
+                self.attentions.append(nn.Identity())
+
+        self.downsample = nn.Conv2d(out_channels, out_channels, 3, stride=2, padding=1) if downsample else None
+
+    def forward(self, x: torch.Tensor, cond: torch.Tensor) -> tuple[torch.Tensor, list[torch.Tensor]]:
+        skips = []
+        for res, attn in zip(self.res_blocks, self.attentions):
+            x = res(x, cond)
+            x = attn(x)
+            skips.append(x)
+        if self.downsample:
+            x = self.downsample(x)
+        return x, skips
+
+
+class UpBlock(nn.Module):
+    """Upsampling block: ResBlocks + optional attention + upsample + skip connections."""
+
+    def __init__(
+        self,
+        in_channels: int,
+        out_channels: int,
+        cond_dim: int,
+        num_res_blocks: int = 2,
+        use_attention: bool = False,
+        num_heads: int = 8,
+        upsample: bool = True,
+    ):
+        super().__init__()
+        self.res_blocks = nn.ModuleList()
+        self.attentions = nn.ModuleList()
+
+        for i in range(num_res_blocks):
+            ic = in_channels + (out_channels if i > 0 else in_channels)
+            self.res_blocks.append(ResBlock(ic, cond_dim, out_channels))
+            if use_attention:
+                self.attentions.append(AttentionBlock(out_channels, num_heads))
+            else:
+                self.attentions.append(nn.Identity())
+
+        self.upsample = nn.ConvTranspose2d(out_channels, out_channels, 4, stride=2, padding=1) if upsample else None
+
+    def forward(self, x: torch.Tensor, cond: torch.Tensor, skips: list[torch.Tensor]) -> torch.Tensor:
+        for res, attn, skip in zip(self.res_blocks, self.attentions, reversed(skips)):
+            x = torch.cat([x, skip], dim=1)
+            x = res(x, cond)
+            x = attn(x)
+        if self.upsample:
+            x = self.upsample(x)
+        return x
+
+
+class LayoutUNet(nn.Module):
+    """Full U-Net backbone for the layout diffusion model.
+
+    Encoder-decoder with skip connections, attention at specified resolutions,
+    and adaptive conditioning (timestep + graph) via ResBlocks.
+    """
+
+    def __init__(
+        self,
+        in_channels: int = 3,
         out_channels: int = 3,
         model_channels: int = 128,
         num_res_blocks: int = 2,
         attention_resolutions: tuple[int, ...] = (16, 8),
-        channel_mult: tuple[int, ...] = (1, 2, 4, 8),
+        channel_mult: tuple[int, ...] = (1, 2, 4, 4),
         num_heads: int = 8,
-        cond_dim: int = 256,       # graph conditioning dimension
+        cond_dim: int = 256,
+        image_size: int = 256,
     ):
         super().__init__()
         self.model_channels = model_channels
+        self.image_size = image_size
+
+        # Time + condition embedding
         self.time_embed = SinusoidalPositionEmbedding(model_channels)
-        self.time_proj = nn.Linear(model_channels, model_channels * 4)
+        self.time_proj = nn.Sequential(
+            nn.Linear(model_channels, model_channels * 4),
+            nn.SiLU(),
+            nn.Linear(model_channels * 4, model_channels * 4),
+        )
+        self.cond_proj = nn.Sequential(
+            nn.Linear(cond_dim, model_channels * 4),
+            nn.SiLU(),
+            nn.Linear(model_channels * 4, model_channels * 4),
+        )
 
-        # Graph conditioning projection
-        self.cond_proj = nn.Linear(cond_dim, model_channels * 4)
-
-        # TODO: implement full U-Net with down/up blocks, residual connections, attention
-        # This is a scaffold - the full architecture would be 500+ lines
+        # Input convolution
         self.input_conv = nn.Conv2d(in_channels, model_channels, 3, padding=1)
-        self.blocks = nn.ModuleList([
-            ResBlock(model_channels, model_channels * 4, model_channels * 2),
-            ResBlock(model_channels * 2, model_channels * 4, model_channels * 4),
-        ])
-        self.output_conv = nn.Conv2d(model_channels * 4, out_channels, 3, padding=1)
+
+        # Determine which levels get attention
+        # resolutions at each level: image_size // (2^level)
+        levels = len(channel_mult)
+        attention_levels = set()
+        for level in range(levels):
+            res = image_size // (2 ** level)
+            if res in attention_resolutions:
+                attention_levels.add(level)
+
+        # Encoder (down blocks)
+        self.down_blocks = nn.ModuleList()
+        channels = model_channels
+        for level in range(levels):
+            out_channels = model_channels * channel_mult[level]
+            use_attn = level in attention_levels
+            downsample = level < levels - 1
+            self.down_blocks.append(DownBlock(
+                in_channels=channels,
+                out_channels=out_channels,
+                cond_dim=model_channels * 4,
+                num_res_blocks=num_res_blocks,
+                use_attention=use_attn,
+                num_heads=num_heads,
+                downsample=downsample,
+            ))
+            channels = out_channels
+
+        # Middle block (always has attention)
+        self.mid_block_1 = ResBlock(channels, model_channels * 4, channels)
+        self.mid_attn = AttentionBlock(channels, num_heads)
+        self.mid_block_2 = ResBlock(channels, model_channels * 4, channels)
+
+        # Decoder (up blocks) — reversed order
+        self.up_blocks = nn.ModuleList()
+        for level in reversed(range(levels)):
+            out_channels = model_channels * channel_mult[level]
+            use_attn = level in attention_levels
+            upsample = level > 0
+            self.up_blocks.append(UpBlock(
+                in_channels=channels,
+                out_channels=out_channels,
+                cond_dim=model_channels * 4,
+                num_res_blocks=num_res_blocks + 1,  # +1 for skip from down block
+                use_attention=use_attn,
+                num_heads=num_heads,
+                upsample=upsample,
+            ))
+            channels = out_channels
+
+        # Output normalization + convolution
+        self.out_norm = nn.GroupNorm(32, channels)
+        self.out_conv = nn.Conv2d(channels, out_channels, 3, padding=1)
 
     def forward(
         self,
-        x: torch.Tensor,           # (B, C, H, W) noisy layout image
-        timesteps: torch.Tensor,   # (B,)
-        graph_cond: torch.Tensor,  # (B, cond_dim) from GraphConditioningEncoder
+        x: torch.Tensor,
+        timesteps: torch.Tensor,
+        graph_cond: torch.Tensor,
     ) -> torch.Tensor:
+        # Embeddings
         t_emb = self.time_embed(timesteps)
         t_emb = self.time_proj(t_emb)
         c_emb = self.cond_proj(graph_cond)
         emb = t_emb + c_emb  # (B, model_channels * 4)
 
+        # Input
         h = self.input_conv(x)
-        for block in self.blocks:
-            h = block(h, emb)
-        return self.output_conv(h)
+
+        # Encoder
+        all_skips = []
+        for down_block in self.down_blocks:
+            h, skips = down_block(h, emb)
+            all_skips.append(skips)
+
+        # Middle
+        h = self.mid_block_1(h, emb)
+        h = self.mid_attn(h)
+        h = self.mid_block_2(h, emb)
+
+        # Decoder
+        for up_block, skips in zip(self.up_blocks, reversed(all_skips)):
+            h = up_block(h, emb, skips)
+
+        # Output
+        h = self.out_norm(h)
+        h = F.silu(h)
+        h = self.out_conv(h)
+        return h
 
 
 class ResBlock(nn.Module):
@@ -224,3 +409,25 @@ class LayoutDiffusionModel(nn.Module):
                 xt = pred_x0
 
         return xt.clamp(-1, 1)
+
+    def save_checkpoint(self, path: str, optimizer=None, epoch: int = 0, best_loss: float = float("inf")):
+        """Save model checkpoint."""
+        import os
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        checkpoint = {
+            "model_state_dict": self.state_dict(),
+            "epoch": epoch,
+            "best_loss": best_loss,
+            "num_train_timesteps": self.num_train_timesteps,
+        }
+        if optimizer:
+            checkpoint["optimizer_state_dict"] = optimizer.state_dict()
+        torch.save(checkpoint, path)
+
+    def load_checkpoint(self, path: str, optimizer=None, device: str = "cpu") -> tuple[int, float]:
+        """Load model checkpoint. Returns (epoch, best_loss)."""
+        checkpoint = torch.load(path, map_location=device)
+        self.load_state_dict(checkpoint["model_state_dict"])
+        if optimizer and "optimizer_state_dict" in checkpoint:
+            optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+        return checkpoint.get("epoch", 0), checkpoint.get("best_loss", float("inf"))
