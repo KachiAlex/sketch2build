@@ -1,0 +1,127 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: sketch2build-postgres
+    environment:
+      POSTGRES_USER: sketch2build
+      POSTGRES_PASSWORD: sketch2build
+      POSTGRES_DB: sketch2build
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sketch2build"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: sketch2build-redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  minio:
+    image: minio/minio:latest
+    container_name: sketch2build-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: sketch2build
+      MINIO_ROOT_PASSWORD: sketch2build
+    volumes:
+      - minio_data:/data
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    container_name: sketch2build-api
+    environment:
+      NODE_ENV: development
+      DATABASE_URL: postgresql://sketch2build:sketch2build@postgres:5432/sketch2build
+      REDIS_URL: redis://redis:6379
+      S3_ENDPOINT: http://minio:9000
+      S3_ACCESS_KEY: sketch2build
+      S3_SECRET_KEY: sketch2build
+      S3_BUCKET: sketch2build
+      AI_SERVICE_URL: http://ai:8000
+      JWT_SECRET: local-dev-secret-replace-in-production
+      PORT: 3000
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    volumes:
+      - ./apps/api:/app/apps/api
+      - ./packages/shared:/app/packages/shared
+      - /app/apps/api/node_modules
+      - /app/packages/shared/node_modules
+    command: npm run dev -w apps/api
+
+  ai:
+    build:
+      context: .
+      dockerfile: apps/ai/Dockerfile
+    container_name: sketch2build-ai
+    environment:
+      PYTHON_ENV: development
+      REDIS_URL: redis://redis:6379
+      S3_ENDPOINT: http://minio:9000
+      S3_ACCESS_KEY: sketch2build
+      S3_SECRET_KEY: sketch2build
+      S3_BUCKET: sketch2build
+    ports:
+      - "8000:8000"
+    depends_on:
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    volumes:
+      - ./apps/ai:/app/apps/ai
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    container_name: sketch2build-web
+    environment:
+      VITE_API_URL: http://localhost:3000
+      VITE_AI_URL: http://localhost:8000
+    ports:
+      - "5173:5173"
+    depends_on:
+      - api
+      - ai
+    volumes:
+      - ./apps/web:/app/apps/web
+      - ./packages/shared:/app/packages/shared
+      - /app/apps/web/node_modules
+      - /app/packages/shared/node_modules
+    command: npm run dev -w apps/web
+
+volumes:
+  postgres_data:
+  minio_data:

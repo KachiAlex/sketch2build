@@ -1,0 +1,27 @@
+{
+  "name": "sketch2build",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AI-assisted architectural design platform",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "concurrently \"npm run dev -w apps/api\" \"npm run dev -w apps/web\" \"npm run dev -w apps/ai\"",
+    "build": "npm run build -w packages/shared && npm run build -w apps/api && npm run build -w apps/web && npm run build -w apps/ai",
+    "lint": "npm run lint -w apps/api && npm run lint -w apps/web && npm run lint -w apps/shared",
+    "test": "npm run test -w apps/api && npm run test -w apps/web && npm run test -w apps/ai",
+    "typecheck": "npm run typecheck -w apps/api && npm run typecheck -w apps/web && npm run typecheck -w apps/shared",
+    "compose:up": "docker compose up --build -d",
+    "compose:down": "docker compose down"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "prettier": "^3.3.2",
+    "typescript": "~5.5.2"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

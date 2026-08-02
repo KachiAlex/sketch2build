@@ -1,0 +1,242 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Sketch2Build drafting palette */
+    --ink: 222 47% 16%; /* #14213D */
+    --ink-soft: 222 41% 28%; /* #2A3A63 */
+    --blueprint: 217 58% 40%; /* #2C5AA0 */
+    --blueprint-pale: 217 65% 94%; /* #E7EEF8 */
+    --redline: 16 81% 50%; /* #E64A19 */
+    --redline-dark: 14 85% 42%; /* #C43A10 */
+    --vellum: 47 38% 94%; /* #F7F3E9 */
+    --vellum-line: 43 30% 80%; /* #DFD6BE */
+    --paper: 0 0% 100%;
+    --paper-bg: 220 14% 96%; /* #F5F6F8 */
+    --paper-line: 220 13% 90%; /* #E4E7ED */
+    --graphite: 222 14% 16%; /* #23262D */
+    --muted: 220 9% 43%; /* #6B7280 */
+    --muted-soft: 220 12% 66%; /* #9BA3B4 */
+
+    /* shadcn-compatible aliases (kept for existing UI components) */
+    --background: 0 0% 100%;
+    --foreground: 222 47% 16%;
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 16%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 16%;
+    --primary: 222 47% 16%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 220 14% 96%;
+    --secondary-foreground: 222 47% 16%;
+    --muted-foreground: 220 9% 43%;
+    --accent: 217 65% 94%;
+    --accent-foreground: 222 47% 16%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 220 13% 90%;
+    --input: 220 13% 90%;
+    --ring: 217 58% 40%;
+    --radius: 0.125rem; /* 2px — hard architectural edges */
+  }
+}
+
+@layer base {
+  * {
+    border-color: hsl(var(--paper-line));
+  }
+  body {
+    font-family: "Inter", ui-sans-serif, system-ui, sans-serif;
+    color: hsl(var(--graphite));
+    background: hsl(var(--paper-bg));
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  h1,
+  h2,
+  h3,
+  .font-display {
+    font-family: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
+  }
+  .font-mono-tech {
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+  }
+  html {
+    scroll-behavior: smooth;
+  }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  /* Vellum blueprint grid background */
+  .bg-vellum-grid {
+    background-color: hsl(var(--vellum));
+    background-image:
+      linear-gradient(hsl(var(--vellum-line)) 1px, transparent 1px),
+      linear-gradient(90deg, hsl(var(--vellum-line)) 1px, transparent 1px);
+    background-size: 34px 34px;
+  }
+
+  /* Dark blueprint grid (for ink sections) */
+  .bg-ink-grid {
+    background-color: hsl(var(--ink));
+    background-image:
+      linear-gradient(hsl(0 0% 100% / 0.055) 1px, transparent 1px),
+      linear-gradient(90deg, hsl(0 0% 100% / 0.055) 1px, transparent 1px);
+    background-size: 30px 30px;
+  }
+
+  .text-redline {
+    color: hsl(var(--redline));
+  }
+  .text-blueprint {
+    color: hsl(var(--blueprint));
+  }
+  .text-ink {
+    color: hsl(var(--ink));
+  }
+
+  /* Hard-edged drafting shadow */
+  .shadow-sheet {
+    box-shadow: 6px 6px 0 hsl(var(--ink) / 0.12);
+  }
+  .shadow-sheet-lg {
+    box-shadow: 10px 10px 0 hsl(var(--ink) / 0.14);
+  }
+
+  /* Scroll-reveal */
+  .reveal {
+    opacity: 0;
+    transform: translateY(22px);
+    transition: opacity 0.7s cubic-bezier(0.22, 1, 0.36, 1),
+      transform 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+    will-change: opacity, transform;
+  }
+  .reveal.is-visible {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  /* SVG draw-on for sketch/vector lines */
+  .animate-draw {
+    stroke-dasharray: 1400;
+    stroke-dashoffset: 1400;
+    animation: draw 3s ease-out forwards;
+  }
+  .animate-draw-slow {
+    stroke-dasharray: 1400;
+    stroke-dashoffset: 1400;
+    animation: draw 4.5s ease-out forwards;
+  }
+
+  /* Static red divider line with rotated label (signature sheet visual) */
+  .divider-scan {
+    position: absolute;
+    width: 2px;
+    background: hsl(var(--redline));
+    z-index: 3;
+  }
+  .divider-scan::after {
+    content: "SKETCH \2192 PLAN";
+    position: absolute;
+    top: 50%;
+    left: 8px;
+    transform: translateY(-50%) rotate(90deg);
+    transform-origin: left;
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 9px;
+    color: hsl(var(--redline));
+    letter-spacing: 0.1em;
+    white-space: nowrap;
+  }
+
+  /* Marquee */
+  .marquee {
+    display: flex;
+    width: max-content;
+    animation: marquee 30s linear infinite;
+  }
+  .marquee:hover {
+    animation-play-state: paused;
+  }
+
+  /* Corner registration ticks for a sheet */
+  .tick {
+    position: absolute;
+    width: 14px;
+    height: 14px;
+  }
+  .tick-tl {
+    top: -1px;
+    left: -1px;
+    border-top: 2.5px solid hsl(var(--redline));
+    border-left: 2.5px solid hsl(var(--redline));
+  }
+  .tick-tr {
+    top: -1px;
+    right: -1px;
+    border-top: 2.5px solid hsl(var(--redline));
+    border-right: 2.5px solid hsl(var(--redline));
+  }
+  .tick-bl {
+    bottom: -1px;
+    left: -1px;
+    border-bottom: 2.5px solid hsl(var(--redline));
+    border-left: 2.5px solid hsl(var(--redline));
+  }
+  .tick-br {
+    bottom: -1px;
+    right: -1px;
+    border-bottom: 2.5px solid hsl(var(--redline));
+    border-right: 2.5px solid hsl(var(--redline));
+  }
+}
+
+@keyframes draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}
+
+@keyframes marquee {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+  .reveal {
+    opacity: 1;
+    transform: none;
+  }
+  .animate-draw,
+  .animate-draw-slow {
+    stroke-dashoffset: 0;
+  }
+}

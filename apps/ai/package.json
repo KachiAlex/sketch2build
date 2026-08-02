@@ -1,0 +1,11 @@
+{
+  "name": "@sketch2build/ai",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "echo 'Python service has no build step'",
+    "test": "pytest",
+    "lint": "ruff check app tests",
+    "typecheck": "mypy app"
+  }
+}

@@ -1,0 +1,121 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String    @id @default(uuid())
+  email         String    @unique
+  name          String
+  role          String // architect | drafter | developer | homeowner | admin
+  organization  String?
+  passwordHash  String
+  projects      Project[]
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
+model Project {
+  id              String           @id @default(uuid())
+  ownerId         String
+  owner           User             @relation(fields: [ownerId], references: [id])
+  name            String
+  description     String?
+  jurisdiction    String
+  plotWidth       Float?
+  plotDepth       Float?
+  plotUnit        String?          // m | ft
+  orientation     Float?
+  status          String           @default("draft") // draft | processing | review | finalized
+  generationJobs  GenerationJob[]
+  editHistory     EditHistory[]
+  exportRecords   ExportRecord[]
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+}
+
+model GenerationJob {
+  id               String      @id @default(uuid())
+  projectId        String
+  project          Project     @relation(fields: [projectId], references: [id])
+  sourceType       String // sketch | prompt
+  status           String      @default("queued") // queued | processing | candidates_ready | under_review | finalized | failed
+  inputReference   String? // object storage key
+  errorMessage     String?
+  candidates       Candidate[]
+  reviewedBy       String?
+  reviewedAt       DateTime?
+  finalizedAt      DateTime?
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+}
+
+model Candidate {
+  id                  String       @id @default(uuid())
+  jobId               String
+  job                 GenerationJob @relation(fields: [jobId], references: [id])
+  rank                Int          @default(0)
+  score               Float?
+  scoreRationale      Json?
+  geometryReference   String?
+  complianceStatus    String       @default("pending") // pending | passed | failed
+  rooms               Room[]
+  complianceViolations ComplianceViolation[]
+  createdAt           DateTime     @default(now())
+}
+
+model Room {
+  id                String    @id @default(uuid())
+  candidateId       String
+  candidate         Candidate @relation(fields: [candidateId], references: [id])
+  type              String // living | bedroom | kitchen | bathroom | dining | corridor | entrance | store | other
+  label             String?
+  area              Float
+  boundaryGeometry  Json // array of [x, y] points
+  adjacentRoomIds   String[]
+}
+
+model ComplianceRule {
+  id             String   @id @default(uuid())
+  jurisdiction   String
+  ruleType       String // setback | min_room_size | corridor_width | ventilation | etc.
+  parameters     Json
+  version        String
+  effectiveDate  DateTime
+  createdAt      DateTime @default(now())
+}
+
+model ComplianceViolation {
+  id          String    @id @default(uuid())
+  candidateId String
+  candidate   Candidate @relation(fields: [candidateId], references: [id])
+  ruleId      String
+  message     String
+  location    String?
+  severity    String // error | warning
+  createdAt   DateTime  @default(now())
+}
+
+model EditHistory {
+  id                      String   @id @default(uuid())
+  projectId               String
+  project                 Project  @relation(fields: [projectId], references: [id])
+  editorId                String
+  changeDescription       String
+  snapshot                Json?    // full previous candidate geometry state
+  timestamp               DateTime @default(now())
+  previousStateReference  String?
+}
+
+model ExportRecord {
+  id             String   @id @default(uuid())
+  projectId      String
+  project        Project  @relation(fields: [projectId], references: [id])
+  format         String // DXF | IFC | PDF | PNG
+  fileReference  String
+  exportedAt     DateTime @default(now())
+}
