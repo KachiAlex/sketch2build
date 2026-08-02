@@ -4,6 +4,8 @@ import structlog
 from typing import Any
 
 from src.inference import vision, layout
+from src.compliance.validator import ComplianceValidator
+from src.compliance.models import BuildingCode, ComplianceReport
 
 logger = structlog.get_logger()
 
@@ -14,7 +16,7 @@ class DesignPipeline:
     def __init__(self):
         self.vision_encoder = vision.SketchEncoder()
         self.layout_generator = layout.LayoutGenerator()
-        # self.compliance_engine = ComplianceEngine()  # TODO: Phase 3
+        self.compliance_validator = ComplianceValidator()
         # self.massing_pipeline = MassingPipeline()     # TODO: Phase 4
 
     def run(
@@ -39,6 +41,7 @@ class DesignPipeline:
             graph = self._text_to_graph(description, constraints)
 
         # Step 2: Generate layout(s)
+        code_enum = BuildingCode(compliance_standard) if compliance_standard in [e.value for e in BuildingCode] else None
         alternatives = []
         for i in range(generate_alternatives):
             floor_plan = self.layout_generator.generate(
@@ -47,14 +50,49 @@ class DesignPipeline:
                 constraints=constraints,
                 seed=i,
             )
+
+            # Step 3: Validate compliance
+            rooms = floor_plan.get("rooms", [])
+            adjacency = floor_plan.get("adjacency", [])
+            plot_width = floor_plan.get("plot_width", constraints.get("plot_width", 0) if constraints else 0)
+            plot_depth = floor_plan.get("plot_depth", constraints.get("plot_depth", 0) if constraints else 0)
+
+            report = self.compliance_validator.check_floor_plan(
+                design_id=f"{job_id}_alt_{i}",
+                rooms=rooms,
+                adjacency=adjacency,
+                plot_width=plot_width,
+                plot_depth=plot_depth,
+                code_filter=code_enum,
+            )
+            self.compliance_validator.generate_explanations(report)
+
+            compliance_result = {
+                "passed": report.score >= 0.8 and all(v.severity != "critical" for v in report.violations),
+                "standard": compliance_standard,
+                "score": report.score,
+                "violations": [
+                    {
+                        "regulation_id": v.constraint.regulation_id,
+                        "parameter": v.constraint.parameter,
+                        "severity": v.severity,
+                        "message": v.message,
+                        "suggested_fix": v.suggested_fix,
+                    }
+                    for v in report.violations
+                ],
+                "explanations": report.explanations,
+            }
+
             alternatives.append({
                 "index": i,
                 "floor_plan": floor_plan,
-                "compliance": {"passed": True, "standard": compliance_standard, "violations": [], "warnings": []},
-                "score": 0.0,  # TODO: ranking model
+                "compliance": compliance_result,
+                "score": report.score,  # Use compliance score for ranking
             })
 
-        # Step 3: Pick best alternative (or return all)
+        # Step 4: Rank and pick best alternative (highest compliance score)
+        alternatives.sort(key=lambda x: x["score"], reverse=True)
         best = alternatives[0] if alternatives else None
 
         result = {
