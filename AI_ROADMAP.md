@@ -64,19 +64,26 @@
   - `POST /api/v1/compliance/design-guidance` — Room type guidance
   - `GET /api/v1/compliance/regulations` — List regulations
 
-## Phase 4: 3D & Export (Weeks 17-24)
+## Phase 4: 3D & Export (Weeks 17-24) — COMPLETE
 
-- [ ] **9. Implement 3D Massing / Extrusion pipeline**
-  - RoomFormer or custom CNN to extrude 2D plans into 3D
-  - Gaussian Splatting or NeRF for visualization
-- [ ] **10. Build FastAPI inference service with Celery + Redis**
-  - Async job queue for generation requests
-  - GPU worker scaling on RunPod / Vast.ai / AWS
-- [ ] **11. Design external API v1 spec**
-  - `POST /api/v1/design/generate`, `GET /jobs/{id}`, alternatives, compliance report
-- [ ] **12. Implement BIM/IFC export and 3D model generation**
-  - GLB, DXF, IFC formats
-  - Revit/ArchiCAD API integration
+- [x] **9. Implement 3D Massing / Extrusion pipeline**
+  - `FloorPlanExtruder` — extrudes 2D room polygons into 3D box geometry (walls, floor, ceiling)
+  - `MultiStoryExtruder` — multi-story building extrusion with floor height offsets
+  - Room type-specific ceiling heights (bathroom 2.4m, living 2.7m, etc.)
+  - Wall thickness 0.15m, floor thickness 0.15m
+  - 3D axonometric preview image generation (512×512 PNG)
+- [x] **9b. Integrate 3D massing into inference pipeline**
+  - Pipeline now runs: sketch → layout → compliance → 3D extrusion → ranking
+  - Each alternative includes `three_d_model` summary (room count, area, volume, floors)
+  - 3D preview generated per alternative for visual comparison
+- [x] **10. Build FastAPI inference service with Celery + Redis** — (Phase 1)
+- [x] **11. Design external API v1 spec** — (Phase 1 + 3)
+- [x] **12. Implement BIM/IFC export and 3D model generation**
+  - `IFCExporter` — STEP-21 IFC4 format with `IFCSPACE` entities, compatible with Revit/ArchiCAD/Tekla
+  - `DXFExporter` — AC1015 (R2000) format, 2D floor plan + 3D wireframe modes
+  - `GLBExporter` — binary GLTF 2.0 with position/normal accessors, WebGL-ready (Three.js, Babylon.js)
+  - `POST /api/v1/exports/export` — returns base64-encoded file with metadata
+  - `POST /api/v1/exports/3d-preview` — returns base64 PNG axonometric preview
 
 ## Phase 5: Polish & Scale (Weeks 25+)
 

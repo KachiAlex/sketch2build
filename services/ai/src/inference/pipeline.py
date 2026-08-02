@@ -6,6 +6,7 @@ from typing import Any
 from src.inference import vision, layout
 from src.compliance.validator import ComplianceValidator
 from src.compliance.models import BuildingCode, ComplianceReport
+from src.models.massing.extruder import FloorPlanExtruder
 
 logger = structlog.get_logger()
 
@@ -17,7 +18,7 @@ class DesignPipeline:
         self.vision_encoder = vision.SketchEncoder()
         self.layout_generator = layout.LayoutGenerator()
         self.compliance_validator = ComplianceValidator()
-        # self.massing_pipeline = MassingPipeline()     # TODO: Phase 4
+        self.extruder = FloorPlanExtruder()
 
     def run(
         self,
@@ -84,14 +85,32 @@ class DesignPipeline:
                 "explanations": report.explanations,
             }
 
+            # Step 4: Generate 3D massing from floor plan
+            building_3d = self.extruder.extrude_floor_plan(
+                rooms=rooms,
+                adjacency=adjacency,
+                entrance_position=floor_plan.get("entrance_position", None),
+            )
+            three_d_summary = {
+                "room_count": len(building_3d.rooms),
+                "total_floor_area": sum(r.floor_area for r in building_3d.rooms),
+                "total_volume": sum(r.volume for r in building_3d.rooms),
+                "floors": building_3d.floors,
+            }
+
+            # Generate 3D preview image
+            preview_3d = self.extruder.generate_3d_preview_image(building_3d, size=512)
+
             alternatives.append({
                 "index": i,
                 "floor_plan": floor_plan,
                 "compliance": compliance_result,
+                "three_d_model": three_d_summary,
+                "preview_3d": preview_3d,
                 "score": report.score,  # Use compliance score for ranking
             })
 
-        # Step 4: Rank and pick best alternative (highest compliance score)
+        # Step 5: Rank and pick best alternative (highest compliance score)
         alternatives.sort(key=lambda x: x["score"], reverse=True)
         best = alternatives[0] if alternatives else None
 
@@ -99,9 +118,17 @@ class DesignPipeline:
             "job_id": job_id,
             "status": "completed",
             "floor_plan": best["floor_plan"] if best else None,
-            "three_d_model": None,  # TODO: Phase 4
+            "three_d_model": best["three_d_model"] if best else None,
             "compliance": best["compliance"] if best else None,
-            "alternatives": alternatives,
+            "alternatives": [
+                {
+                    "index": alt["index"],
+                    "floor_plan": alt["floor_plan"],
+                    "compliance": alt["compliance"],
+                    "three_d_model": alt["three_d_model"],
+                }
+                for alt in alternatives
+            ],
             "explainability": [],  # TODO: Phase 5
         }
 
