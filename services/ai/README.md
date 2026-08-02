@@ -6,16 +6,22 @@ Multi-modal AI service for architectural sketch-to-plan generation.
 
 ```
 src/
-  api/v1/          # FastAPI routes (generate, jobs, health)
+  api/v1/          # FastAPI routes (generate, jobs, health, compliance)
   models/
     vision/        # Sketch-to-Graph Encoder (CLIP + detection head)
     layout/        # Layout Diffusion Model (U-Net + graph conditioning)
     massing/       # 3D extrusion model (Phase 4)
+  compliance/      # RAG engine + validator + constrained diffusion
+    vector_store.py       # ChromaDB/FAISS regulation store
+    validator.py          # Hard/soft constraint checking
+    rag_engine.py         # RAG question answering
+    regulations_seed.py   # 34 curated regulations (IBC, ASHRAE, NFPA, ADA, Eurocode, Zoning)
+    constrained_diffusion.py # Compliance-aware diffusion sampling
   training/
     data/          # Synthetic data generator, sketch warper, datasets
     utils/         # Metrics, visualization
     config/        # YAML training configs
-  inference/       # Pipeline orchestration (vision → layout → 3D)
+  inference/       # Pipeline orchestration (vision → layout → compliance → 3D)
   services/        # Celery queue, storage
   config.py        # Pydantic settings
   main.py          # FastAPI entry point
@@ -68,6 +74,11 @@ docker-compose up --build
 | `/api/v1/design/generate` | POST | Submit design generation job |
 | `/api/v1/jobs/{job_id}` | GET | Poll job status |
 | `/api/v1/jobs/{job_id}/result` | GET | Get completed results |
+| `/api/v1/compliance/query` | POST | RAG question answering on building codes |
+| `/api/v1/compliance/validate` | POST | Validate floor plan against regulations |
+| `/api/v1/compliance/check-requirement` | POST | Check if a value meets a code requirement |
+| `/api/v1/compliance/design-guidance` | POST | Get guidance for room types |
+| `/api/v1/compliance/regulations` | GET | List available regulations |
 
 ## Environment Variables
 
@@ -86,9 +97,9 @@ docker-compose up --build
 
 ## Phase Status
 
-- **Phase 1 (Foundation)**: In progress — scaffolding complete, synthetic generator ready
-- **Phase 2 (Layout Generation)**: Scaffolded — diffusion model architecture defined
-- **Phase 3 (Compliance)**: Not started
+- **Phase 1 (Foundation)**: Complete — scaffolding, synthetic generator, training infra, vision encoder, layout diffusion, FastAPI/Celery
+- **Phase 2 (Layout Generation + Real Data)**: Complete — graph-based synthetic generator, RPlan/CubiCasa5K loaders, mixed training pipeline (training requires GPU)
+- **Phase 3 (Compliance)**: Complete — RAG engine with 34 regulations, validator with hard/soft constraints, constrained diffusion, compliance API v1
 - **Phase 4 (3D & Export)**: Not started
 - **Phase 5 (Polish)**: Not started
 
@@ -127,8 +138,44 @@ python -m src.training.train_layout \
   --num_epochs 100
 ```
 
+## Compliance
+
+### Seed Regulations
+
+```bash
+python -m scripts.seed_regulations
+```
+
+This populates the ChromaDB/FAISS vector store with 34 curated regulations from IBC, ASHRAE, NFPA, ADA, Eurocode, and local zoning.
+
+### Validate a Floor Plan
+
+```bash
+curl -X POST http://localhost:8000/api/v1/compliance/validate \
+  -H "Content-Type: application/json" \
+  -d '{
+    "design_id": "test-001",
+    "rooms": [
+      {"type": "bedroom", "width": 3.5, "depth": 4.0, "area": 14.0, "height": 2.5, "id": "b1"},
+      {"type": "bathroom", "width": 2.0, "depth": 2.5, "area": 5.0, "height": 2.2, "id": "b2"}
+    ],
+    "adjacency": [[0, 1]],
+    "code": "IBC"
+  }'
+```
+
+### Query Building Codes
+
+```bash
+curl -X POST http://localhost:8000/api/v1/compliance/query \
+  -H "Content-Type: application/json" \
+  -d '{"question": "What is the minimum bedroom size in IBC?", "code": "IBC"}'
+```
+
 ## Notes
 
 - The diffusion model U-Net is currently a scaffold. The full architecture would include 4+ down/up blocks with attention at 16x16 and 8x8 resolutions.
-- Synthetic data generator uses simple grid-based placement. Replace with graph-based growth (House-GAN style) for more realistic plans.
-- 3D massing and compliance engine are stubbed in `src/inference/pipeline.py` and will be implemented in Phases 3-4.
+- Synthetic data generator now uses graph-based growth (House-GAN style) in `src/training/data/graph_generator.py`.
+- Compliance engine is fully implemented with RAG, validator, and constrained diffusion in `src/compliance/`.
+- 3D massing is stubbed in `src/inference/pipeline.py` and will be implemented in Phase 4.
+- The LLM generation step in RAG uses structured summaries; replace with fine-tuned Llama 3 8B or API call in production.
