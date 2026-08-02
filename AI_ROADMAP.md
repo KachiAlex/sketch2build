@@ -1,28 +1,40 @@
 # AI Architectural Design Engine — Roadmap
 
-## Phase 1: Foundation (Weeks 1-4)
+## Phase 1: Foundation (Weeks 1-4) — COMPLETE
 
-- [ ] **1. Scaffold AI training pipeline project structure**
+- [x] **1. Scaffold AI training pipeline project structure**
   - FastAPI inference service, models/, training/, data/, docker/
-- [ ] **2. Build synthetic data generator for floor plan + sketch pairs**
+- [x] **2. Build synthetic data generator for floor plan + sketch pairs**
   - Procedural layout engine using House-GAN / GraphRNN approach
   - Synthetic sketch generation via edge detection + warping from real plans
-- [ ] **3. Set up training infrastructure**
+- [x] **3. Set up training infrastructure**
   - GPU Docker image (PyTorch 2.0 + CUDA)
   - Data loaders, experiment tracking (Weights & Biases or MLflow)
-- [ ] **4. Implement Sketch-to-Graph Vision Encoder**
+- [x] **4. Implement Sketch-to-Graph Vision Encoder**
   - Fine-tune CLIP/SigLIP on architectural sketches
   - Output: structured JSON (room types, dimensions, adjacency, structural elements)
 
-## Phase 2: Core Layout Generation (Weeks 5-10)
+## Phase 2: Core Layout Generation + Real Data (Weeks 5-10) — IN PROGRESS
 
-- [ ] **5. Implement 2D Layout Diffusion Model**
+- [x] **5. Implement 2D Layout Diffusion Model**
   - Transformer-based U-Net or Graph Transformer
   - Input: room adjacency graph + sketch embedding + text prompt
   - Output: vectorized floor plan (walls, doors, windows as polygons)
-- [ ] **6. Train Layout Model on datasets**
-  - Synthetic data (millions of samples) + RPlan + CubiCasa5K
+- [x] **5b. Refine synthetic generator with graph-based room growth**
+  - Adjacency-aware placement (House-GAN style)
+  - Realistic room sizing and connections
+- [x] **6. Create dataset loaders for RPlan + CubiCasa5K**
+  - SVG/JSON parsing for real-world floor plan annotations
+  - Synthetic sketch generation from real plans via edge detection + warping
+- [x] **6b. Build mixed training pipeline**
+  - Weighted sampling across synthetic (50%) + RPlan (30%) + CubiCasa5K (20%)
+  - `MixedSketchDataset` and `MixedLayoutDataset` for both vision and diffusion models
+- [ ] **6c. Train Layout Model on mixed datasets**
+  - Run on GPU (A100/L40S) with W&B logging
   - LTR (Learning to Rank) loss on real architect ratings
+- [ ] **6d. Evaluate and iterate**
+  - FID scores on generated vs. real floor plans
+  - Architect validation of room adjacency accuracy
 
 ## Phase 3: Compliance & Constraints (Weeks 11-16)
 
