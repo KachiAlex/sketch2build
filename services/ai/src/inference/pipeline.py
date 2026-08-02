@@ -4,6 +4,7 @@ import structlog
 from typing import Any
 
 from src.inference import vision, layout
+from src.inference.text_parser import TextToGraphParser
 from src.compliance.validator import ComplianceValidator
 from src.compliance.models import BuildingCode, ComplianceReport
 from src.models.massing.extruder import FloorPlanExtruder
@@ -23,6 +24,7 @@ class DesignPipeline:
         self.extruder = FloorPlanExtruder()
         self.explainability_engine = ExplainabilityEngine()
         self.regional_manager = RegionalProfileManager()
+        self.text_parser = TextToGraphParser()
 
     def run(
         self,
@@ -163,10 +165,25 @@ class DesignPipeline:
 
     def _text_to_graph(self, description: str | None, constraints: dict | None) -> dict:
         """Convert text description + constraints into a room adjacency graph."""
-        # TODO: use LLM to parse text into structured room graph
-        room_types = constraints.get("room_types", ["living", "kitchen", "bedroom", "bath"]) if constraints else ["living", "kitchen", "bedroom", "bath"]
+        if not description:
+            # Default if no description provided
+            room_types = constraints.get("room_types", ["living", "kitchen", "bedroom", "bathroom"]) if constraints else ["living", "kitchen", "bedroom", "bathroom"]
+            return {
+                "room_types": room_types,
+                "bboxes": [],
+                "adjacency": [],
+                "dimensions": constraints or {},
+            }
+
+        # Use NLP parser to extract room graph from description
+        parsed = self.text_parser.parse(description, constraints)
+
+        # If style was parsed from text, it will be used downstream
         return {
-            "room_types": room_types,
-            "adjacency": [],  # TODO: infer from text
-            "dimensions": constraints or {},
+            "room_types": parsed["room_types"],
+            "bboxes": [],
+            "adjacency": parsed["adjacency"],
+            "dimensions": parsed["dimensions"],
+            "room_sizes": parsed["room_sizes"],
+            "parsed_style": parsed["style"],
         }

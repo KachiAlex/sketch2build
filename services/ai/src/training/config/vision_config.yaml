@@ -1,0 +1,54 @@
+# Vision Encoder Training Configuration
+# Sketch-to-Graph Vision Encoder (CLIP + Cross-Attention Room Detection Head)
+
+model:
+  pretrained_model: "openai/clip-vit-large-patch14"
+  freeze_backbone: false  # Set true for first stage, false for full fine-tuning
+  max_rooms: 20
+  num_room_types: 12
+
+training:
+  batch_size: 8
+  epochs: 100
+  learning_rate: 1.0e-4
+  weight_decay: 0.01
+  warmup_steps: 1000
+  max_grad_norm: 1.0
+  save_every_n_epochs: 5
+  patience: 20  # Early stopping
+  val_split: 0.1
+
+data:
+  data_dir: "/app/data"
+  datasets:
+    - synthetic
+    - rplan
+    - cubicasa
+  weights:
+    synthetic: 0.5
+    rplan: 0.3
+    cubicasa: 0.2
+  image_size: 224
+  max_rooms: 20
+
+optimizer:
+  type: "adamw"
+  lr: 1.0e-4
+  weight_decay: 0.01
+  betas: [0.9, 0.999]
+
+scheduler:
+  type: "cosine_with_warmup"
+  warmup_steps: 1000
+  total_steps: 100000
+
+logging:
+  use_wandb: true
+  wandb_project: "sketch2build-ai"
+  wandb_run_name: "vision_encoder_full"
+  log_every_n_steps: 50
+
+output:
+  output_dir: "/app/models/vision_encoder"
+  save_best: true
+  save_periodic: true
