@@ -4,6 +4,7 @@ import { useAuth } from "../contexts/AuthContext";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
+import { Select } from "../components/ui/select";
 
 const roles = [
   { value: "homeowner", label: "Homeowner" },
@@ -37,9 +38,28 @@ export default function Register() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center">
-      <form onSubmit={handleSubmit} className="w-full max-w-sm space-y-4 rounded-lg border p-6 shadow-sm">
-        <h1 className="text-2xl font-semibold">Create account</h1>
+    <div className="flex min-h-screen items-center justify-center bg-vellum-grid">
+      <form
+        onSubmit={handleSubmit}
+        className="relative w-full max-w-sm space-y-5 border-[1.5px] border-ink bg-white p-8 shadow-sheet"
+      >
+        <span className="tick tick-tl" />
+        <span className="tick tick-tr" />
+        <span className="tick tick-bl" />
+        <span className="tick tick-br" />
+
+        <div className="space-y-1">
+          <div className="flex items-center gap-[9px] font-display font-bold text-[17px]">
+            <span className="relative h-5 w-5 border-2 border-ink">
+              <span className="absolute -right-1 -bottom-1 h-2 w-2 bg-redline" />
+            </span>
+            <span className="text-ink">Sketch2Build</span>
+          </div>
+          <h1 className="font-display text-xl font-bold text-ink">Create account</h1>
+          <p className="font-mono-tech text-xs text-muted">
+            SHEET AUTH-200 · USER REGISTRATION
+          </p>
+        </div>
         {error && <p className="text-sm text-destructive">{error}</p>}
         <div className="space-y-2">
           <Label htmlFor="name">Full name</Label>
@@ -55,24 +75,29 @@ export default function Register() {
         </div>
         <div className="space-y-2">
           <Label htmlFor="role">Role</Label>
-          <select
+          <Select
             id="role"
             value={form.role}
             onChange={(e) => setForm({ ...form, role: e.target.value })}
-            className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
           >
             {roles.map((role) => (
               <option key={role.value} value={role.value}>
                 {role.label}
               </option>
             ))}
-          </select>
+          </Select>
         </div>
         <div className="space-y-2">
           <Label htmlFor="organization">Organization (optional)</Label>
           <Input id="organization" value={form.organization} onChange={(e) => setForm({ ...form, organization: e.target.value })} />
         </div>
         <Button type="submit" className="w-full">Create account</Button>
+        <p className="text-center text-sm text-muted-foreground">
+          Already have an account?{" "}
+          <a href="/login" className="font-medium text-blueprint hover:underline">
+            Sign in
+          </a>
+        </p>
       </form>
     </div>
   );

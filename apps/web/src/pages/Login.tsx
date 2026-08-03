@@ -24,9 +24,28 @@ export default function Login() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center">
-      <form onSubmit={handleSubmit} className="w-full max-w-sm space-y-4 rounded-lg border p-6 shadow-sm">
-        <h1 className="text-2xl font-semibold">Sign in</h1>
+    <div className="flex min-h-screen items-center justify-center bg-vellum-grid">
+      <form
+        onSubmit={handleSubmit}
+        className="relative w-full max-w-sm space-y-6 border-[1.5px] border-ink bg-white p-8 shadow-sheet"
+      >
+        <span className="tick tick-tl" />
+        <span className="tick tick-tr" />
+        <span className="tick tick-bl" />
+        <span className="tick tick-br" />
+
+        <div className="space-y-1">
+          <div className="flex items-center gap-[9px] font-display font-bold text-[17px]">
+            <span className="relative h-5 w-5 border-2 border-ink">
+              <span className="absolute -right-1 -bottom-1 h-2 w-2 bg-redline" />
+            </span>
+            <span className="text-ink">Sketch2Build</span>
+          </div>
+          <h1 className="font-display text-xl font-bold text-ink">Sign in</h1>
+          <p className="font-mono-tech text-xs text-muted">
+            SHEET AUTH-100 · ACCESS CONTROL
+          </p>
+        </div>
         {error && <p className="text-sm text-destructive">{error}</p>}
         <div className="space-y-2">
           <Label htmlFor="email">Email</Label>
@@ -37,6 +56,12 @@ export default function Login() {
           <Input id="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
         </div>
         <Button type="submit" className="w-full">Sign in</Button>
+        <p className="text-center text-sm text-muted-foreground">
+          No account?{" "}
+          <a href="/register" className="font-medium text-blueprint hover:underline">
+            Create one
+          </a>
+        </p>
       </form>
     </div>
   );

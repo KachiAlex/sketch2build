@@ -54,8 +54,13 @@ export default function AdminRules() {
   }
 
   return (
-    <div className="mx-auto max-w-4xl space-y-6 p-6">
-      <h1 className="text-2xl font-semibold">Compliance Rules Admin</h1>
+    <div className="mx-auto max-w-4xl space-y-6">
+      <div>
+        <h1 className="font-display text-2xl font-bold text-ink">Compliance Rules Admin</h1>
+        <p className="font-mono-tech text-xs text-muted">
+          SHEET A-200 · RULES MANAGEMENT
+        </p>
+      </div>
       {error && <p className="text-sm text-destructive">{error}</p>}
 
       <Card>

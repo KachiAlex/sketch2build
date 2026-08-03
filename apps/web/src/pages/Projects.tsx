@@ -46,7 +46,13 @@ export default function Projects() {
   }
 
   return (
-    <div className="mx-auto max-w-4xl space-y-8 p-6">
+    <div className="mx-auto max-w-4xl space-y-8">
+      <div>
+        <h1 className="font-display text-2xl font-bold text-ink">Projects</h1>
+        <p className="font-mono-tech text-xs text-muted">
+          SHEET PRJ-100 · PROJECT MANAGEMENT
+        </p>
+      </div>
       <Card>
         <CardHeader>
           <CardTitle>New project</CardTitle>

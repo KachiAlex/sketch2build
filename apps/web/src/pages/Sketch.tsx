@@ -1,21 +1,20 @@
 import { useEffect, useRef, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams, useNavigate } from "react-router-dom";
+import { Upload } from "lucide-react";
 import { api } from "../lib/api";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
+import { Select } from "../components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
+import { useToast } from "../components/ui/toast";
 
 type Point = { x: number; y: number };
-type VectorGraph = {
-  walls: { start: Point; end: Point }[];
-  doors: unknown[];
-  windows: unknown[];
-  rooms: unknown[];
-};
 
 export default function Sketch() {
   const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
+  const { toast } = useToast();
   const projectId = searchParams.get("projectId") || "";
   const fileInputRef = useRef<HTMLInputElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -28,9 +27,7 @@ export default function Sketch() {
   const [referenceLength, setReferenceLength] = useState("");
   const [unit, setUnit] = useState<"m" | "ft" | "cm" | "mm">("m");
   const [isUploading, setIsUploading] = useState(false);
-  const [uploadResult, setUploadResult] = useState<{ job: { id: string; status: string } } | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [vectorGraph, setVectorGraph] = useState<VectorGraph | null>(null);
 
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -39,7 +36,6 @@ export default function Sketch() {
     setImageUrl(url);
     setStartPoint(null);
     setEndPoint(null);
-    setVectorGraph(null);
     const img = new Image();
     img.onload = () => {
       setImageSize({ width: img.naturalWidth, height: img.naturalHeight });
@@ -114,19 +110,7 @@ export default function Sketch() {
       ctx.fill();
     }
 
-    if (vectorGraph) {
-      ctx.strokeStyle = "#3b82f6";
-      ctx.lineWidth = 3;
-      const scaleX = displayWidth / (imageSize.width || 1);
-      const scaleY = displayHeight / (imageSize.height || 1);
-      for (const wall of vectorGraph.walls) {
-        ctx.beginPath();
-        ctx.moveTo(wall.start.x * scaleX, wall.start.y * scaleY);
-        ctx.lineTo(wall.end.x * scaleX, wall.end.y * scaleY);
-        ctx.stroke();
-      }
-    }
-  }, [startPoint, endPoint, vectorGraph, imageSize]);
+  }, [startPoint, endPoint, imageSize]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -161,18 +145,12 @@ export default function Sketch() {
         referenceLength: parseFloat(referenceLength),
         unit,
       });
-      setUploadResult(result);
-      setVectorGraph({
-        walls: [
-          { start: { x: 0, y: 0 }, end: { x: imageSize?.width || 100, y: 0 } },
-          { start: { x: imageSize?.width || 100, y: 0 }, end: { x: imageSize?.width || 100, y: imageSize?.height || 80 } },
-          { start: { x: imageSize?.width || 100, y: imageSize?.height || 80 }, end: { x: 0, y: imageSize?.height || 80 } },
-          { start: { x: 0, y: imageSize?.height || 80 }, end: { x: 0, y: 0 } },
-        ],
-        doors: [],
-        windows: [],
-        rooms: [],
+      toast({
+        title: "Sketch submitted",
+        description: `Job ${result.job.id} is being processed`,
+        variant: "success",
       });
+      navigate(`/results/${result.job.id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Upload failed");
     } finally {
@@ -183,8 +161,16 @@ export default function Sketch() {
   const referencePixels = startPoint && endPoint ? Math.hypot(endPoint.x - startPoint.x, endPoint.y - startPoint.y) : 0;
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6 p-6">
-      <h1 className="text-2xl font-semibold">Upload sketch</h1>
+    <div className="mx-auto max-w-5xl space-y-6">
+      <div className="flex items-center gap-3">
+        <Upload className="h-6 w-6 text-redline" />
+        <div>
+          <h1 className="font-display text-2xl font-bold text-ink">Upload Sketch</h1>
+          <p className="font-mono-tech text-xs text-muted">
+            SHEET S-100 · SKETCH-TO-DESIGN
+          </p>
+        </div>
+      </div>
       {error && <p className="text-sm text-destructive">{error}</p>}
 
       <Card>
@@ -245,17 +231,16 @@ export default function Sketch() {
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="unit">Unit</Label>
-                  <select
+                  <Select
                     id="unit"
                     value={unit}
                     onChange={(e) => setUnit(e.target.value as "m" | "ft" | "cm" | "mm")}
-                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                   >
                     <option value="m">Metres</option>
                     <option value="ft">Feet</option>
                     <option value="cm">Centimetres</option>
                     <option value="mm">Millimetres</option>
-                  </select>
+                  </Select>
                 </div>
               </div>
               <Button type="submit" disabled={isUploading || !endPoint}>
@@ -266,17 +251,6 @@ export default function Sketch() {
         </Card>
       )}
 
-      {uploadResult && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Digitization job</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-sm">Job ID: {uploadResult.job.id}</p>
-            <p className="text-sm">Status: {uploadResult.job.status}</p>
-          </CardContent>
-        </Card>
-      )}
     </div>
   );
 }
