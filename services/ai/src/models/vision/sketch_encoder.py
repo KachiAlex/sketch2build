@@ -116,9 +116,9 @@ class RoomGraphHead(nn.Module):
         bbox_logits = torch.sigmoid(bbox_logits)  # normalize to 0-1
 
         # Adjacency: pairwise combinations
-        # (B, max_rooms, 1, hidden_dim) + (B, 1, max_rooms, hidden_dim) → (B, max_rooms, max_rooms, 2*hidden_dim)
-        room_i = room_features.unsqueeze(2)  # (B, max_rooms, 1, hidden_dim)
-        room_j = room_features.unsqueeze(1)  # (B, 1, max_rooms, hidden_dim)
+        # Expand to (B, max_rooms, max_rooms, hidden_dim) before concatenating
+        room_i = room_features.unsqueeze(2).expand(-1, -1, self.max_rooms, -1)  # (B, max_rooms, max_rooms, hidden_dim)
+        room_j = room_features.unsqueeze(1).expand(-1, self.max_rooms, -1, -1)  # (B, max_rooms, max_rooms, hidden_dim)
         pair_features = torch.cat([room_i, room_j], dim=-1)  # (B, max_rooms, max_rooms, 2*hidden_dim)
         adjacency_logits = self.adjacency_proj(pair_features).squeeze(-1)  # (B, max_rooms, max_rooms)
 
