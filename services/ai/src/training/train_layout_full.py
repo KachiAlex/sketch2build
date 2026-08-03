@@ -79,7 +79,6 @@ def collate_fn(batch):
         "mask": mask,
     }
 
-
 def train_epoch(model, dataloader, optimizer, device, max_grad_norm=1.0):
     """Train for one epoch."""
     model.train()
@@ -192,8 +191,13 @@ def main():
 
     # Create datasets
     data_dir = Path(args.data_dir)
+    synthetic_dir = data_dir / "synthetic"
+    metadata_path = str(synthetic_dir / "metadata.json")
+    image_dir = str(synthetic_dir)
+
     full_dataset = LayoutDataset(
-        data_dir=data_dir,
+        metadata_path=metadata_path,
+        image_dir=image_dir,
         split="train",
         image_size=256,
     )
