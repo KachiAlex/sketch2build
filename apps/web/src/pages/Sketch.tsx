@@ -143,6 +143,7 @@ export default function Sketch() {
         fileData: base64,
         fileType: file.type,
         referenceLength: parseFloat(referenceLength),
+        referencePixels: referencePixelsNatural,
         unit,
       });
       toast({
@@ -159,6 +160,17 @@ export default function Sketch() {
   }
 
   const referencePixels = startPoint && endPoint ? Math.hypot(endPoint.x - startPoint.x, endPoint.y - startPoint.y) : 0;
+
+  // Scale factor: displayed image may be smaller than natural image
+  const scaleFactor = (() => {
+    const canvas = canvasRef.current;
+    if (!canvas || !imageSize) return 1;
+    return canvas.clientWidth / imageSize.width;
+  })();
+
+  // The reference line in display pixels needs to be converted to natural image pixels
+  // so the backend can correctly compute the scale ratio
+  const referencePixelsNatural = referencePixels / scaleFactor;
 
   return (
     <div className="mx-auto max-w-5xl space-y-6">
@@ -213,8 +225,8 @@ export default function Sketch() {
               />
             </div>
             {endPoint && (
-              <p className="text-sm text-muted-foreground">
-                Reference pixels: {referencePixels.toFixed(1)}
+              <p className="font-mono-tech text-xs text-muted">
+                Reference: {referencePixels.toFixed(1)} px (display) · {referencePixelsNatural.toFixed(1)} px (native)
               </p>
             )}
             <form onSubmit={handleSubmit} className="space-y-4">

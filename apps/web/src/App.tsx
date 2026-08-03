@@ -2,6 +2,7 @@ import { Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import { ToastProvider } from "./components/ui/toast";
 import { AppHeader } from "./components/AppHeader";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 import Home from "./pages/Home";
 import Dashboard from "./pages/Dashboard";
 import Projects from "./pages/Projects";
@@ -12,6 +13,7 @@ import Prompt from "./pages/Prompt";
 import Results from "./pages/Results";
 import AdminRules from "./pages/AdminRules";
 import Review from "./pages/Review";
+import NotFound from "./pages/NotFound";
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const { user, isLoading } = useAuth();
@@ -90,6 +92,7 @@ function AppLayout() {
               </PrivateRoute>
             }
           />
+          <Route path="*" element={<NotFound />} />
         </Routes>
       </main>
     </div>
@@ -98,9 +101,10 @@ function AppLayout() {
 
 function App() {
   return (
-    <AuthProvider>
-      <ToastProvider>
-        <Routes>
+    <ErrorBoundary>
+      <AuthProvider>
+        <ToastProvider>
+          <Routes>
           {/* Public marketing site */}
           <Route path="/" element={<Home />} />
           <Route path="/login" element={<Login />} />
@@ -111,6 +115,7 @@ function App() {
         </Routes>
       </ToastProvider>
     </AuthProvider>
+    </ErrorBoundary>
   );
 }
 
