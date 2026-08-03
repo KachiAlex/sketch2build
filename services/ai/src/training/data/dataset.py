@@ -65,7 +65,7 @@ class SketchDataset(Dataset):
         rooms = item.get("rooms", [])
         num_rooms = min(len(rooms), self.max_rooms)
 
-        room_types = torch.zeros(self.max_rooms, dtype=torch.long)
+        room_types = torch.full((self.max_rooms,), -1, dtype=torch.long)  # -1 = padding
         bboxes = torch.zeros(self.max_rooms, 4, dtype=torch.float32)
         mask = torch.zeros(self.max_rooms, dtype=torch.bool)
         adjacency = torch.zeros(self.max_rooms, self.max_rooms, dtype=torch.float32)
@@ -97,6 +97,12 @@ class SketchDataset(Dataset):
 class LayoutDataset(Dataset):
     """Dataset for layout diffusion model training."""
 
+    ROOM_TYPES = [
+        "living", "kitchen", "bedroom", "bathroom", "dining",
+        "hallway", "entrance", "balcony", "storage", "garage",
+        "office", "utility",
+    ]
+
     def __init__(
         self,
         metadata_path: str,
@@ -121,6 +127,8 @@ class LayoutDataset(Dataset):
         else:
             self.data = all_data[int(n * 0.9) :]
 
+        self.room_type_to_idx = {rt: i for i, rt in enumerate(self.ROOM_TYPES)}
+
     def __len__(self) -> int:
         return len(self.data)
 
@@ -132,7 +140,7 @@ class LayoutDataset(Dataset):
         image = Image.open(image_path).convert("RGB").resize((self.image_size, self.image_size))
 
         # Normalize to [-1, 1]
-        x0 = torch.from_numpy(np.array(image)).permute(2, 0, 1).float() / 127.5 - 1.0
+        image_tensor = torch.from_numpy(np.array(image)).permute(2, 0, 1).float() / 127.5 - 1.0
 
         # Build graph conditioning
         rooms = item.get("rooms", [])
@@ -144,7 +152,7 @@ class LayoutDataset(Dataset):
         adjacency = torch.zeros(self.max_rooms, self.max_rooms, dtype=torch.float32)
 
         for i, room in enumerate(rooms[:num_rooms]):
-            room_types[i] = hash(room["type"]) % 12  # simple hash for room type
+            room_types[i] = self.room_type_to_idx.get(room["type"], 0)
             bboxes[i] = torch.tensor([room["x"], room["y"], room["w"], room["d"]], dtype=torch.float32)
             mask[i] = True
 
@@ -154,10 +162,9 @@ class LayoutDataset(Dataset):
                 adjacency[j, i] = 1.0
 
         return {
-            "x0": x0,
-            "room_types": room_types,
-            "bboxes": bboxes,
-            "mask": mask,
-            "adjacency": adjacency,
+            "image": image_tensor,
+            "rooms": [{"type": r["type"], "type_idx": self.room_type_to_idx.get(r["type"], 0),
+                        "bbox": [r["x"], r["y"], r["w"], r["d"]]} for r in rooms[:num_rooms]],
+            "adjacency": item.get("adjacency", []),
             "image_id": item["id"],
         }

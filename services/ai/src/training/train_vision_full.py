@@ -38,6 +38,7 @@ from torch.optim.lr_scheduler import CosineAnnealingLR, LinearLR
 from src.models.vision.sketch_encoder import SketchEncoderModel
 from src.training.data.dataset import SketchDataset
 from src.config import get_settings
+from transformers import CLIPProcessor
 
 logger = structlog.get_logger()
 settings = get_settings()
@@ -45,12 +46,9 @@ settings = get_settings()
 
 def collate_fn(batch):
     """Collate batch into padded tensors for multi-room prediction."""
-    from src.models.vision.sketch_encoder import SketchEncoderModel
-
     max_rooms = 20
-    num_room_types = len(SketchEncoderModel.ROOM_TYPES)
-    room_type_to_idx = {rt: i for i, rt in enumerate(SketchEncoderModel.ROOM_TYPES)}
 
+    # SketchDataset already returns processed tensors
     pixel_values = torch.stack([item["pixel_values"] for item in batch])
 
     B = len(batch)
@@ -61,26 +59,34 @@ def collate_fn(batch):
     mask = torch.zeros(B, max_rooms, dtype=torch.bool)
 
     for b, item in enumerate(batch):
-        rooms = item.get("rooms", [])
-        for i, room in enumerate(rooms[:max_rooms]):
-            room_type = room.get("type", "living")
-            type_idx = room_type_to_idx.get(room_type, 0)
-            room_types[b, i] = type_idx
-            room_presence[b, i] = 1.0
-            mask[b, i] = True
+        # Dataset returns mask and room_types already padded to max_rooms
+        item_mask = item.get("mask")
+        if item_mask is not None:
+            mask[b] = item_mask
+            room_types[b] = item["room_types"]
+            bboxes[b] = item["bboxes"]
+            room_presence[b] = item_mask.float()
+            adjacency[b] = item["adjacency"]
+        else:
+            # Fallback: extract from rooms list
+            rooms = item.get("rooms", [])
+            for i, room in enumerate(rooms[:max_rooms]):
+                room_type = room.get("type", "living")
+                type_idx = room_type_to_idx.get(room_type, 0)
+                room_types[b, i] = type_idx
+                room_presence[b, i] = 1.0
+                mask[b, i] = True
+                bbox = room.get("bbox", [0, 0, 0, 0])
+                if len(bbox) == 4:
+                    bboxes[b, i] = torch.tensor(bbox, dtype=torch.float32)
 
-            bbox = room.get("bbox", [0, 0, 0, 0])
-            if len(bbox) == 4:
-                bboxes[b, i] = torch.tensor(bbox, dtype=torch.float32)
-
-        # Adjacency
-        adj = item.get("adjacency", [])
-        for pair in adj:
-            if isinstance(pair, (list, tuple)) and len(pair) >= 2:
-                a, c = int(pair[0]), int(pair[1])
-                if a < max_rooms and c < max_rooms:
-                    adjacency[b, a, c] = 1.0
-                    adjacency[b, c, a] = 1.0
+            adj = item.get("adjacency", [])
+            for pair in adj:
+                if isinstance(pair, (list, tuple)) and len(pair) >= 2:
+                    a, c = int(pair[0]), int(pair[1])
+                    if a < max_rooms and c < max_rooms:
+                        adjacency[b, a, c] = 1.0
+                        adjacency[b, c, a] = 1.0
 
     return {
         "pixel_values": pixel_values,
@@ -217,10 +223,19 @@ def main():
         freeze_backbone=args.freeze_backbone,
     ).to(device)
 
+    # Create CLIP processor for image preprocessing
+    processor = CLIPProcessor.from_pretrained(settings.vision_model_name)
+
     # Create datasets
     data_dir = Path(args.data_dir)
+    synthetic_dir = data_dir / "synthetic"
+    metadata_path = str(synthetic_dir / "metadata.json")
+    image_dir = str(synthetic_dir)
+
     full_dataset = SketchDataset(
-        data_dir=data_dir,
+        metadata_path=metadata_path,
+        image_dir=image_dir,
+        processor=processor,
         split="train",
         max_rooms=20,
     )
