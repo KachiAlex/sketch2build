@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
-import { Sparkles, Wand2 } from "lucide-react";
+import { Sparkles, Wand2, Globe } from "lucide-react";
 import { api } from "../lib/api";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
@@ -52,9 +52,18 @@ export default function Prompt() {
     complianceStandard: "NBC",
     alternatives: "3",
     floors: "1",
+    regionalProfile: "none",
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [regionalProfiles, setRegionalProfiles] = useState<{ id: string; name: string; climate_zone: string }[]>([]);
+
+  useEffect(() => {
+    api
+      .get<{ profiles: { id: string; name: string; climate_zone: string }[] }>("/regional/profiles")
+      .then((data) => setRegionalProfiles(data.profiles))
+      .catch(() => {});
+  }, []);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -81,6 +90,7 @@ export default function Prompt() {
           compliance_standard: form.complianceStandard,
           generate_alternatives: parseInt(form.alternatives, 10),
           floors: parseInt(form.floors, 10),
+          regional_profile: form.regionalProfile !== "none" ? form.regionalProfile : undefined,
         },
       });
       toast({
@@ -280,6 +290,29 @@ export default function Prompt() {
                 <option value="2">Two storeys</option>
                 <option value="3">Three storeys</option>
               </Select>
+            </div>
+
+            {/* Regional profile */}
+            <div className="space-y-2 sm:col-span-2">
+              <Label htmlFor="regionalProfile" className="flex items-center gap-1.5">
+                <Globe className="h-3.5 w-3.5 text-blueprint" />
+                Regional profile (optional)
+              </Label>
+              <Select
+                id="regionalProfile"
+                value={form.regionalProfile}
+                onChange={(e) => setForm({ ...form, regionalProfile: e.target.value })}
+              >
+                <option value="none">No regional adjustment</option>
+                {regionalProfiles.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name} — {p.climate_zone}
+                  </option>
+                ))}
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Adapts room sizes, ventilation, and compliance rules to local climate and cultural norms.
+              </p>
             </div>
 
             {/* Free text prompt */}

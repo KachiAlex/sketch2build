@@ -3,7 +3,12 @@ import { api } from "../lib/api";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
+import { Select } from "../components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
+import { Badge } from "../components/ui/badge";
+import { Skeleton } from "../components/ui/skeleton";
+import { useToast } from "../components/ui/toast";
+import { ScrollText } from "lucide-react";
 
 interface Rule {
   id: string;
@@ -14,8 +19,18 @@ interface Rule {
   effectiveDate: string;
 }
 
+const RULE_TYPES = [
+  { value: "setback", label: "Setback" },
+  { value: "height_limit", label: "Height Limit" },
+  { value: "plot_coverage", label: "Plot Coverage" },
+  { value: "parking", label: "Parking Requirement" },
+  { value: "room_size", label: "Minimum Room Size" },
+  { value: "ventilation", label: "Ventilation" },
+];
+
 export default function AdminRules() {
   const [rules, setRules] = useState<Rule[]>([]);
+  const [loading, setLoading] = useState(true);
   const [form, setForm] = useState({
     jurisdiction: "Nigeria",
     ruleType: "setback",
@@ -24,10 +39,19 @@ export default function AdminRules() {
     effectiveDate: "",
   });
   const [error, setError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const { toast } = useToast();
 
   async function loadRules() {
-    const data = await api.get<{ rules: Rule[] }>("/compliance/rules");
-    setRules(data.rules);
+    setLoading(true);
+    try {
+      const data = await api.get<{ rules: Rule[] }>("/compliance/rules");
+      setRules(data.rules);
+    } catch {
+      // ignore
+    } finally {
+      setLoading(false);
+    }
   }
 
   useEffect(() => {
@@ -37,6 +61,7 @@ export default function AdminRules() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    setIsSubmitting(true);
     try {
       const parameters = JSON.parse(form.parameters || "{}") as Record<string, unknown>;
       await api.post("/compliance/rules", {
@@ -48,8 +73,13 @@ export default function AdminRules() {
       });
       setForm({ jurisdiction: "Nigeria", ruleType: "setback", parameters: "", version: "", effectiveDate: "" });
       await loadRules();
+      toast({ title: "Rule created", description: `${form.ruleType} — ${form.jurisdiction}`, variant: "success" });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to create rule");
+      const msg = err instanceof Error ? err.message : "Failed to create rule";
+      setError(msg);
+      toast({ title: "Failed to create rule", description: msg, variant: "error" });
+    } finally {
+      setIsSubmitting(false);
     }
   }
 
@@ -75,7 +105,17 @@ export default function AdminRules() {
             </div>
             <div className="space-y-2">
               <Label htmlFor="ruleType">Rule type</Label>
-              <Input id="ruleType" value={form.ruleType} onChange={(e) => setForm({ ...form, ruleType: e.target.value })} required />
+              <Select
+                id="ruleType"
+                value={form.ruleType}
+                onChange={(e) => setForm({ ...form, ruleType: e.target.value })}
+              >
+                {RULE_TYPES.map((rt) => (
+                  <option key={rt.value} value={rt.value}>
+                    {rt.label}
+                  </option>
+                ))}
+              </Select>
             </div>
             <div className="space-y-2 sm:col-span-2">
               <Label htmlFor="parameters">Parameters (JSON)</Label>
@@ -90,28 +130,52 @@ export default function AdminRules() {
               <Input id="effectiveDate" type="datetime-local" value={form.effectiveDate} onChange={(e) => setForm({ ...form, effectiveDate: e.target.value })} required />
             </div>
             <div className="sm:col-span-2">
-              <Button type="submit">Create rule</Button>
+              <Button type="submit" disabled={isSubmitting}>
+                {isSubmitting ? "Creating…" : "Create rule"}
+              </Button>
             </div>
           </form>
         </CardContent>
       </Card>
 
       <div className="space-y-4">
-        <h2 className="text-xl font-semibold">Rules</h2>
-        {rules.length === 0 ? (
-          <p className="text-muted-foreground">No rules yet.</p>
+        <h2 className="font-display text-xl font-semibold text-ink">Rules</h2>
+        {loading ? (
+          <div className="space-y-4">
+            <Skeleton className="h-28" />
+            <Skeleton className="h-28" />
+            <Skeleton className="h-28" />
+          </div>
+        ) : rules.length === 0 ? (
+          <Card>
+            <CardContent className="flex flex-col items-center gap-3 py-12">
+              <ScrollText className="h-8 w-8 text-muted" />
+              <p className="text-sm text-muted-foreground">
+                No compliance rules yet. Add one above to get started.
+              </p>
+            </CardContent>
+          </Card>
         ) : (
           <div className="grid gap-4">
             {rules.map((rule) => (
-              <Card key={rule.id}>
+              <Card key={rule.id} className="border-[1.5px] border-vellum-line">
                 <CardHeader>
-                  <CardTitle className="text-base">{rule.ruleType} — {rule.jurisdiction} ({rule.version})</CardTitle>
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-base">
+                      {rule.ruleType} — {rule.jurisdiction}
+                    </CardTitle>
+                    <Badge variant="blueprint" className="text-xs">
+                      v{rule.version}
+                    </Badge>
+                  </div>
                 </CardHeader>
                 <CardContent>
                   <pre className="overflow-x-auto rounded-md bg-muted p-2 text-xs">
                     {JSON.stringify(rule.parameters, null, 2)}
                   </pre>
-                  <p className="mt-2 text-sm text-muted-foreground">Effective: {new Date(rule.effectiveDate).toLocaleString()}</p>
+                  <p className="mt-2 font-mono-tech text-xs text-muted">
+                    Effective: {new Date(rule.effectiveDate).toLocaleString()}
+                  </p>
                 </CardContent>
               </Card>
             ))}

@@ -94,7 +94,7 @@ function Navbar() {
     { label: "Product", href: "#features" },
     { label: "How it works", href: "#how" },
     { label: "Pricing", href: "#pricing" },
-    { label: "Docs", href: "#" },
+    { label: "Docs", href: "https://github.com/KachiAlex/sketch2build#readme" },
   ];
 
   return (
@@ -460,9 +460,9 @@ function Footer() {
     <footer className="mx-auto flex max-w-[1320px] flex-col items-center justify-between gap-3 px-6 py-[26px] font-mono-tech text-xs text-muted md:flex-row md:px-14">
       <span>© SKETCH2BUILD</span>
       <span className="flex gap-4">
-        <a href="#" className="hover:text-ink">PRIVACY</a>
-        <a href="#" className="hover:text-ink">TERMS</a>
-        <a href="#" className="hover:text-ink">DOCS</a>
+        <a href="/login" className="hover:text-ink">PRIVACY</a>
+        <a href="/login" className="hover:text-ink">TERMS</a>
+        <a href="https://github.com/KachiAlex/sketch2build#readme" className="hover:text-ink">DOCS</a>
       </span>
     </footer>
   );
