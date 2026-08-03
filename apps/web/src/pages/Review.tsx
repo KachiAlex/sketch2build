@@ -199,9 +199,9 @@ export default function Review() {
       <div className="flex-1 space-y-4">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-semibold">Review candidate #{candidate?.rank}</h1>
-            <p className="text-sm text-muted-foreground">
-              Score: {candidate?.score ?? "—"} | Compliance: {candidate?.complianceStatus}
+            <h1 className="font-display text-2xl font-bold text-ink">Review Candidate #{candidate?.rank}</h1>
+            <p className="font-mono-tech text-xs text-muted">
+              SHEET R-100 · ARCHITECT REVIEW · SCORE: {candidate?.score ?? "—"} · {candidate?.complianceStatus}
             </p>
           </div>
           <div className="flex gap-2">
@@ -329,16 +329,22 @@ export default function Review() {
           <CardContent>
             <div className="grid grid-cols-2 gap-2">
               <Button variant="outline" onClick={() => handleExport("dxf", `layout-${candidateId}.dxf`)}>
-                DXF
+                DXF (2D)
               </Button>
-              <Button variant="outline" onClick={() => handleExport("pdf", `layout-${candidateId}.pdf`)}>
-                PDF
+              <Button variant="outline" onClick={() => handleExport("dxf3d", `layout-${candidateId}-3d.dxf`)}>
+                DXF (3D)
+              </Button>
+              <Button variant="outline" onClick={() => handleExport("ifc", `layout-${candidateId}.ifc`)}>
+                IFC (BIM)
+              </Button>
+              <Button variant="outline" onClick={() => handleExport("glb", `layout-${candidateId}.glb`)}>
+                GLB (3D)
               </Button>
               <Button variant="outline" onClick={() => handleExport("png", `layout-${candidateId}.png`)}>
                 PNG
               </Button>
-              <Button variant="outline" onClick={() => handleExport("ifc", `layout-${candidateId}.ifc`)}>
-                IFC
+              <Button variant="outline" onClick={() => handleExport("preview3d", `preview-${candidateId}.png`)}>
+                3D Preview
               </Button>
             </div>
           </CardContent>
