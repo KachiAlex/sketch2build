@@ -243,12 +243,12 @@ class LayoutUNet(nn.Module):
         # Decoder (up blocks) — reversed order
         self.up_blocks = nn.ModuleList()
         for level in reversed(range(levels)):
-            out_channels = model_channels * channel_mult[level]
+            level_out = model_channels * channel_mult[level]
             use_attn = level in attention_levels
             upsample = level > 0
             self.up_blocks.append(UpBlock(
                 in_channels=channels,
-                out_channels=out_channels,
+                out_channels=level_out,
                 cond_dim=model_channels * 4,
                 skip_channels=skip_channels_per_level[level],
                 num_res_blocks=num_res_blocks,
@@ -256,7 +256,7 @@ class LayoutUNet(nn.Module):
                 num_heads=num_heads,
                 upsample=upsample,
             ))
-            channels = out_channels
+            channels = level_out
 
         # Output normalization + convolution
         self.out_norm = nn.GroupNorm(32, channels)
