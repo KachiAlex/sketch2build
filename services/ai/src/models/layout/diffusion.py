@@ -310,11 +310,11 @@ class ResBlock(nn.Module):
 
     def forward(self, x: torch.Tensor, cond: torch.Tensor) -> torch.Tensor:
         h = self.norm1(x)
-        scale, shift = self.cond_proj(cond)[:, :, None, None].chunk(2, dim=1)
-        h = h * (1 + scale) + shift
         h = F.silu(h)
         h = self.conv1(h)
         h = self.norm2(h)
+        scale, shift = self.cond_proj(cond)[:, :, None, None].chunk(2, dim=1)
+        h = h * (1 + scale) + shift
         h = F.silu(h)
         h = self.conv2(h)
         return h + self.shortcut(x)
