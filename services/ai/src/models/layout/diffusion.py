@@ -137,6 +137,7 @@ class UpBlock(nn.Module):
         in_channels: int,
         out_channels: int,
         cond_dim: int,
+        skip_channels: int,
         num_res_blocks: int = 2,
         use_attention: bool = False,
         num_heads: int = 8,
@@ -147,7 +148,7 @@ class UpBlock(nn.Module):
         self.attentions = nn.ModuleList()
 
         for i in range(num_res_blocks):
-            ic = in_channels + (out_channels if i > 0 else in_channels)
+            ic = in_channels + skip_channels if i == 0 else out_channels + skip_channels
             self.res_blocks.append(ResBlock(ic, cond_dim, out_channels))
             if use_attention:
                 self.attentions.append(AttentionBlock(out_channels, num_heads))
@@ -216,6 +217,7 @@ class LayoutUNet(nn.Module):
 
         # Encoder (down blocks)
         self.down_blocks = nn.ModuleList()
+        skip_channels_per_level = []
         channels = model_channels
         for level in range(levels):
             out_channels = model_channels * channel_mult[level]
@@ -230,6 +232,7 @@ class LayoutUNet(nn.Module):
                 num_heads=num_heads,
                 downsample=downsample,
             ))
+            skip_channels_per_level.append(out_channels)
             channels = out_channels
 
         # Middle block (always has attention)
@@ -247,7 +250,8 @@ class LayoutUNet(nn.Module):
                 in_channels=channels,
                 out_channels=out_channels,
                 cond_dim=model_channels * 4,
-                num_res_blocks=num_res_blocks + 1,  # +1 for skip from down block
+                skip_channels=skip_channels_per_level[level],
+                num_res_blocks=num_res_blocks,
                 use_attention=use_attn,
                 num_heads=num_heads,
                 upsample=upsample,
