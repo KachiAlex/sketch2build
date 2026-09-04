@@ -35,6 +35,7 @@ class GraphConditioningEncoder(nn.Module):
         self.room_embed = nn.Embedding(num_room_types, hidden_dim)
         self.pos_embed = nn.Linear(4, hidden_dim)  # bounding box (x, y, w, h)
         self.adjacency_encoder = nn.Linear(max_rooms, hidden_dim)
+        self.story_embed = nn.Embedding(4, hidden_dim)  # 1-3 stories + padding
         self.fusion = nn.TransformerEncoder(
             nn.TransformerEncoderLayer(d_model=hidden_dim, nhead=8, batch_first=True),
             num_layers=4,
@@ -47,12 +48,19 @@ class GraphConditioningEncoder(nn.Module):
         bboxes: torch.Tensor,      # (B, max_rooms, 4)
         adjacency: torch.Tensor,   # (B, max_rooms, max_rooms)
         mask: torch.Tensor,        # (B, max_rooms) bool, True = valid room
+        num_stories: torch.Tensor | None = None,  # (B,) int, 1-3
     ) -> torch.Tensor:
         room_emb = self.room_embed(room_types)  # (B, max_rooms, hidden_dim)
         pos_emb = self.pos_embed(bboxes)        # (B, max_rooms, hidden_dim)
         adj_emb = self.adjacency_encoder(adjacency)  # (B, max_rooms, hidden_dim)
 
         combined = room_emb + pos_emb + adj_emb
+
+        # Add story-level conditioning
+        if num_stories is not None:
+            story_emb = self.story_embed(num_stories.clamp(0, 3))  # (B, hidden_dim)
+            combined = combined + story_emb.unsqueeze(1)
+
         # Mask padding rooms
         combined = combined * mask.unsqueeze(-1).float()
 
@@ -350,6 +358,7 @@ class LayoutDiffusionModel(nn.Module):
         bboxes: torch.Tensor,
         adjacency: torch.Tensor,
         mask: torch.Tensor,
+        num_stories: torch.Tensor | None = None,  # (B,) int
     ) -> torch.Tensor:
         """Training forward pass: add noise and predict it."""
         batch_size = x0.size(0)
@@ -367,7 +376,7 @@ class LayoutDiffusionModel(nn.Module):
         xt = sqrt_alpha_t * x0 + sqrt_one_minus_alpha_t * noise
 
         # Condition on graph
-        graph_cond = self.graph_encoder(room_types, bboxes, adjacency, mask)
+        graph_cond = self.graph_encoder(room_types, bboxes, adjacency, mask, num_stories=num_stories)
 
         # Predict noise
         pred_noise = self.unet(xt, t, graph_cond)
@@ -382,11 +391,12 @@ class LayoutDiffusionModel(nn.Module):
         mask: torch.Tensor,
         shape: tuple[int, ...] = (1, 3, 256, 256),
         num_inference_steps: int = 50,
+        num_stories: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """DDPM sampling: generate layout from noise."""
         device = room_types.device
         xt = torch.randn(shape, device=device)
-        graph_cond = self.graph_encoder(room_types, bboxes, adjacency, mask)
+        graph_cond = self.graph_encoder(room_types, bboxes, adjacency, mask, num_stories=num_stories)
 
         # DDPM sampling with fewer steps
         step_ratio = self.num_train_timesteps // num_inference_steps

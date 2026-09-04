@@ -52,6 +52,9 @@ class FloorPlan:
     plot_width: float = 20.0
     plot_depth: float = 20.0
     entrance_position: tuple[float, float] = (0.0, 0.0)
+    num_stories: int = 1
+    region: str = "generic"
+    style: str = "modern"
 
     def to_image(self, size: int = 256, line_width: int = 2, show_labels: bool = False) -> Image.Image:
         img = Image.new("RGB", (size, size), "white")
@@ -142,18 +145,26 @@ class FloorPlan:
 class GraphBasedLayoutGenerator:
     """Generates floor plans using graph-based room growth."""
 
-    ROOM_TYPES = ["living", "kitchen", "bedroom", "bathroom", "dining", "hallway", "entrance", "storage"]
+    ROOM_TYPES = [
+        "living", "kitchen", "bedroom", "bathroom", "dining",
+        "hallway", "entrance", "storage", "balcony", "garage",
+        "office", "utility",
+    ]
 
     # Adjacency preferences: which rooms should be next to each other
     ADJACENCY_PREFERENCES = {
-        "entrance": ["hallway", "living"],
-        "living": ["kitchen", "dining", "hallway", "bedroom"],
-        "kitchen": ["dining", "living", "storage"],
+        "entrance": ["hallway", "living", "garage"],
+        "living": ["kitchen", "dining", "hallway", "bedroom", "balcony"],
+        "kitchen": ["dining", "living", "storage", "utility"],
         "dining": ["kitchen", "living"],
-        "bedroom": ["bathroom", "hallway", "living"],
+        "bedroom": ["bathroom", "hallway", "living", "balcony"],
         "bathroom": ["bedroom", "hallway"],
-        "hallway": ["entrance", "bedroom", "bathroom", "living"],
-        "storage": ["kitchen"],
+        "hallway": ["entrance", "bedroom", "bathroom", "living", "office"],
+        "storage": ["kitchen", "hallway"],
+        "balcony": ["living", "bedroom", "dining"],
+        "garage": ["entrance", "storage"],
+        "office": ["hallway", "living"],
+        "utility": ["kitchen", "storage"],
     }
 
     # Minimum room sizes (meters)
@@ -166,19 +177,74 @@ class GraphBasedLayoutGenerator:
         "hallway": (1.2, 2.0),
         "entrance": (1.5, 1.5),
         "storage": (1.5, 1.5),
+        "balcony": (1.0, 2.0),
+        "garage": (3.0, 5.0),
+        "office": (2.5, 3.0),
+        "utility": (1.0, 1.0),
     }
 
     # Maximum room sizes (meters)
     MAX_SIZES = {
-        "living": (8.0, 8.0),
-        "kitchen": (5.0, 5.0),
-        "bedroom": (5.0, 5.0),
-        "bathroom": (3.0, 4.0),
-        "dining": (6.0, 6.0),
-        "hallway": (2.0, 6.0),
-        "entrance": (3.0, 3.0),
-        "storage": (3.0, 3.0),
+        "living": (10.0, 10.0),
+        "kitchen": (6.0, 6.0),
+        "bedroom": (6.0, 6.0),
+        "bathroom": (3.5, 4.5),
+        "dining": (7.0, 7.0),
+        "hallway": (2.5, 8.0),
+        "entrance": (3.5, 3.5),
+        "storage": (4.0, 4.0),
+        "balcony": (2.0, 6.0),
+        "garage": (4.0, 7.0),
+        "office": (5.0, 5.0),
+        "utility": (2.0, 2.0),
     }
+
+    # Regional profiles: different room preferences and plot sizes per region
+    REGIONAL_PROFILES = {
+        "generic": {
+            "extra_rooms": ["dining", "hallway", "storage", "bedroom", "office", "balcony"],
+            "plot_range": (12, 25),
+            "story_prob": 0.0,
+        },
+        "us": {
+            "extra_rooms": ["dining", "hallway", "storage", "garage", "office", "utility"],
+            "plot_range": (15, 30),
+            "story_prob": 0.15,
+        },
+        "nordic": {
+            "extra_rooms": ["hallway", "storage", "utility", "office"],
+            "plot_range": (10, 20),
+            "story_prob": 0.1,
+        },
+        "middle_east": {
+            "extra_rooms": ["dining", "hallway", "storage", "office", "balcony"],
+            "plot_range": (12, 28),
+            "story_prob": 0.05,
+        },
+        "tropical": {
+            "extra_rooms": ["dining", "hallway", "balcony", "utility", "bedroom"],
+            "plot_range": (10, 22),
+            "story_prob": 0.0,
+        },
+        "japan": {
+            "extra_rooms": ["hallway", "storage", "utility", "balcony"],
+            "plot_range": (8, 16),
+            "story_prob": 0.2,
+        },
+        "europe": {
+            "extra_rooms": ["dining", "hallway", "storage", "balcony", "office"],
+            "plot_range": (10, 22),
+            "story_prob": 0.1,
+        },
+        "arid": {
+            "extra_rooms": ["dining", "hallway", "storage", "balcony", "utility"],
+            "plot_range": (12, 26),
+            "story_prob": 0.05,
+        },
+    }
+
+    # Architectural styles
+    STYLES = ["modern", "traditional", "compact", "open_plan", "luxury"]
 
     def __init__(self, seed: int | None = None):
         if seed is not None:
@@ -240,17 +306,31 @@ class GraphBasedLayoutGenerator:
         plot_depth: float | None = None,
         required_rooms: list[str] | None = None,
         valid: bool = True,
+        region: str = "generic",
+        style: str = "modern",
+        num_stories: int | None = None,
     ) -> FloorPlan:
         """Generate a floor plan using graph-based growth."""
+        profile = self.REGIONAL_PROFILES.get(region, self.REGIONAL_PROFILES["generic"])
+
         if plot_width is None:
-            plot_width = random.uniform(12, 25)
+            plot_width = random.uniform(*profile["plot_range"])
         if plot_depth is None:
-            plot_depth = random.uniform(12, 25)
+            plot_depth = random.uniform(*profile["plot_range"])
+
+        # Multi-story: smaller footprint but same total rooms
+        if num_stories is None:
+            num_stories = 2 if random.random() < profile["story_prob"] else 1
 
         if required_rooms is None:
             required_rooms = ["entrance", "living", "kitchen", "bedroom", "bathroom"]
             if num_rooms and num_rooms > len(required_rooms):
-                extra = random.sample(["dining", "hallway", "storage", "bedroom"], num_rooms - len(required_rooms))
+                pool = profile["extra_rooms"]
+                extra_needed = num_rooms - len(required_rooms)
+                extra = random.sample(pool, min(extra_needed, len(pool)))
+                # Fill remaining with bedrooms (most common extra room)
+                while len(extra) < extra_needed:
+                    extra.append(random.choice(["bedroom", "storage", "hallway"]))
                 required_rooms.extend(extra)
 
         rooms: list[Room] = []
@@ -320,6 +400,9 @@ class GraphBasedLayoutGenerator:
             plot_width=plot_width,
             plot_depth=plot_depth,
             entrance_position=entrance_position,
+            num_stories=num_stories,
+            region=region,
+            style=style,
         )
 
         if not valid:
@@ -358,9 +441,13 @@ class GraphBasedLayoutGenerator:
         batch_size: int,
         valid_ratio: float = 0.7,
         min_rooms: int = 3,
-        max_rooms: int = 8,
+        max_rooms: int = 12,
     ) -> Iterator[FloorPlan]:
+        regions = list(self.REGIONAL_PROFILES.keys())
+        styles = self.STYLES
         for _ in range(batch_size):
             num_rooms = random.randint(min_rooms, max_rooms)
             is_valid = random.random() < valid_ratio
-            yield self.generate(num_rooms=num_rooms, valid=is_valid)
+            region = random.choice(regions)
+            style = random.choice(styles)
+            yield self.generate(num_rooms=num_rooms, valid=is_valid, region=region, style=style)
