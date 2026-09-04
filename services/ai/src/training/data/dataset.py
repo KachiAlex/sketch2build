@@ -1,13 +1,14 @@
 """PyTorch Dataset classes for training."""
 
 import json
+import random
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 import torch
 from torch.utils.data import Dataset
-from PIL import Image
+from PIL import Image, ImageFilter
 from transformers import CLIPProcessor
 
 
@@ -27,11 +28,13 @@ class SketchDataset(Dataset):
         processor: CLIPProcessor,
         split: str = "train",
         max_rooms: int = 20,
+        augment: bool = True,
     ):
         self.image_dir = Path(image_dir)
         self.processor = processor
         self.max_rooms = max_rooms
         self.split = split
+        self.augment = augment and split == "train"
 
         with open(metadata_path) as f:
             all_data = json.load(f)
@@ -56,6 +59,10 @@ class SketchDataset(Dataset):
         # Load sketch image
         image_path = self.image_dir / item["sketch"]
         image = Image.open(image_path).convert("RGB")
+
+        # Data augmentation for training
+        if self.augment:
+            image = self._augment_image(image)
 
         # Process with CLIP processor
         inputs = self.processor(images=image, return_tensors="pt")
@@ -100,6 +107,30 @@ class SketchDataset(Dataset):
             "image_id": item["id"],
         }
 
+    def _augment_image(self, image: Image.Image) -> Image.Image:
+        """Apply random augmentations to sketch image."""
+        # Random horizontal flip
+        if random.random() < 0.5:
+            image = image.transpose(Image.FLIP_LEFT_RIGHT)
+        # Random vertical flip (less common for floor plans)
+        if random.random() < 0.3:
+            image = image.transpose(Image.FLIP_TOP_BOTTOM)
+        # Random rotation (small angles)
+        if random.random() < 0.3:
+            angle = random.uniform(-5, 5)
+            image = image.rotate(angle, fillcolor="white")
+        # Random Gaussian blur
+        if random.random() < 0.2:
+            radius = random.uniform(0.5, 1.5)
+            image = image.filter(ImageFilter.GaussianBlur(radius=radius))
+        # Random brightness/contrast jitter
+        if random.random() < 0.3:
+            arr = np.array(image).astype(np.float32)
+            brightness = random.uniform(0.8, 1.2)
+            arr = np.clip(arr * brightness, 0, 255).astype(np.uint8)
+            image = Image.fromarray(arr)
+        return image
+
 
 class LayoutDataset(Dataset):
     """Dataset for layout diffusion model training."""
@@ -117,11 +148,13 @@ class LayoutDataset(Dataset):
         split: str = "train",
         image_size: int = 256,
         max_rooms: int = 20,
+        augment: bool = True,
     ):
         self.image_dir = Path(image_dir)
         self.image_size = image_size
         self.max_rooms = max_rooms
         self.split = split
+        self.augment = augment and split == "train"
 
         with open(metadata_path) as f:
             all_data = json.load(f)
@@ -145,6 +178,11 @@ class LayoutDataset(Dataset):
         # Load clean floor plan image (target for diffusion)
         image_path = self.image_dir / item["image"]
         image = Image.open(image_path).convert("RGB").resize((self.image_size, self.image_size))
+
+        # Data augmentation for training
+        flip_h = False
+        if self.augment:
+            image, flip_h = self._augment_image(image)
 
         # Normalize to [-1, 1]
         image_tensor = torch.from_numpy(np.array(image)).permute(2, 0, 1).float() / 127.5 - 1.0
@@ -181,4 +219,20 @@ class LayoutDataset(Dataset):
                         "bbox": [r["x"] / plot_w, r["y"] / plot_d, r["w"] / plot_w, r["d"] / plot_d]} for r in rooms[:num_rooms]],
             "adjacency": item.get("adjacency", []),
             "image_id": item["id"],
+            "num_stories": item.get("num_stories", 1),
+            "region": item.get("region", "generic"),
+            "style": item.get("style", "modern"),
         }
+
+    def _augment_image(self, image: Image.Image) -> tuple[Image.Image, bool]:
+        """Apply random augmentations. Returns (image, was_flipped_h)."""
+        flip_h = False
+        if random.random() < 0.5:
+            image = image.transpose(Image.FLIP_LEFT_RIGHT)
+            flip_h = True
+        if random.random() < 0.2:
+            arr = np.array(image).astype(np.float32)
+            noise = np.random.normal(0, 5, arr.shape).astype(np.float32)
+            arr = np.clip(arr + noise, 0, 255).astype(np.uint8)
+            image = Image.fromarray(arr)
+        return image, flip_h
