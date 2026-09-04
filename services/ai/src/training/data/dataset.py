@@ -70,9 +70,16 @@ class SketchDataset(Dataset):
         mask = torch.zeros(self.max_rooms, dtype=torch.bool)
         adjacency = torch.zeros(self.max_rooms, self.max_rooms, dtype=torch.float32)
 
+        plot_w = item.get("width", 20.0)
+        plot_d = item.get("depth", 20.0)
         for i, room in enumerate(rooms[:num_rooms]):
             room_types[i] = self.room_type_to_idx.get(room["type"], 0)
-            bboxes[i] = torch.tensor([room["x"], room["y"], room["w"], room["d"]], dtype=torch.float32)
+            bboxes[i] = torch.tensor([
+                room["x"] / plot_w,
+                room["y"] / plot_d,
+                room["w"] / plot_w,
+                room["d"] / plot_d,
+            ], dtype=torch.float32)
             mask[i] = True
 
         for i, j in item.get("adjacency", []):
@@ -151,9 +158,16 @@ class LayoutDataset(Dataset):
         mask = torch.zeros(self.max_rooms, dtype=torch.bool)
         adjacency = torch.zeros(self.max_rooms, self.max_rooms, dtype=torch.float32)
 
+        plot_w = item.get("width", 20.0)
+        plot_d = item.get("depth", 20.0)
         for i, room in enumerate(rooms[:num_rooms]):
             room_types[i] = self.room_type_to_idx.get(room["type"], 0)
-            bboxes[i] = torch.tensor([room["x"], room["y"], room["w"], room["d"]], dtype=torch.float32)
+            bboxes[i] = torch.tensor([
+                room["x"] / plot_w,
+                room["y"] / plot_d,
+                room["w"] / plot_w,
+                room["d"] / plot_d,
+            ], dtype=torch.float32)
             mask[i] = True
 
         for i, j in item.get("adjacency", []):
@@ -164,7 +178,7 @@ class LayoutDataset(Dataset):
         return {
             "image": image_tensor,
             "rooms": [{"type": r["type"], "type_idx": self.room_type_to_idx.get(r["type"], 0),
-                        "bbox": [r["x"], r["y"], r["w"], r["d"]]} for r in rooms[:num_rooms]],
+                        "bbox": [r["x"] / plot_w, r["y"] / plot_d, r["w"] / plot_w, r["d"] / plot_d]} for r in rooms[:num_rooms]],
             "adjacency": item.get("adjacency", []),
             "image_id": item["id"],
         }

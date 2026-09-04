@@ -180,7 +180,7 @@ class LayoutUNet(nn.Module):
         out_channels: int = 3,
         model_channels: int = 128,
         num_res_blocks: int = 2,
-        attention_resolutions: tuple[int, ...] = (16, 8),
+        attention_resolutions: tuple[int, ...] = (32,),
         channel_mult: tuple[int, ...] = (1, 2, 4, 4),
         num_heads: int = 8,
         cond_dim: int = 256,
@@ -220,20 +220,20 @@ class LayoutUNet(nn.Module):
         skip_channels_per_level = []
         channels = model_channels
         for level in range(levels):
-            out_channels = model_channels * channel_mult[level]
+            level_out = model_channels * channel_mult[level]
             use_attn = level in attention_levels
             downsample = level < levels - 1
             self.down_blocks.append(DownBlock(
                 in_channels=channels,
-                out_channels=out_channels,
+                out_channels=level_out,
                 cond_dim=model_channels * 4,
                 num_res_blocks=num_res_blocks,
                 use_attention=use_attn,
                 num_heads=num_heads,
                 downsample=downsample,
             ))
-            skip_channels_per_level.append(out_channels)
-            channels = out_channels
+            skip_channels_per_level.append(level_out)
+            channels = level_out
 
         # Middle block (always has attention)
         self.mid_block_1 = ResBlock(channels, model_channels * 4, channels)
@@ -388,25 +388,25 @@ class LayoutDiffusionModel(nn.Module):
         xt = torch.randn(shape, device=device)
         graph_cond = self.graph_encoder(room_types, bboxes, adjacency, mask)
 
-        # DDPM sampling with fewer steps (simple approach)
+        # DDPM sampling with fewer steps
         step_ratio = self.num_train_timesteps // num_inference_steps
-        timesteps = torch.arange(0, self.num_train_timesteps, step_ratio, device=device).flip(0)
+        timesteps = list(range(self.num_train_timesteps - 1, -1, -step_ratio))
 
-        for t in timesteps:
-            t_batch = t.expand(shape[0])
-            pred_noise = self.unet(xt, t_batch, graph_cond)
+        for i, t in enumerate(timesteps):
+            t_tensor = torch.full((shape[0],), t, device=device, dtype=torch.long)
+            pred_noise = self.unet(xt, t_tensor, graph_cond)
 
-            alpha_t = self.alphas[t]
             alpha_cumprod_t = self.alphas_cumprod[t]
             beta_t = self.betas[t]
 
             # Predict x_0
             pred_x0 = (xt - torch.sqrt(1 - alpha_cumprod_t) * pred_noise) / torch.sqrt(alpha_cumprod_t)
 
-            # Compute x_{t-1}
-            if t > 0:
-                noise = torch.randn_like(xt) if t > 1 else torch.zeros_like(xt)
-                alpha_cumprod_prev = self.alphas_cumprod[t - 1]
+            # Compute x_{t-1} using the previous timestep in the schedule
+            if i < len(timesteps) - 1:
+                t_prev = timesteps[i + 1]
+                alpha_cumprod_prev = self.alphas_cumprod[t_prev]
+                noise = torch.randn_like(xt)
                 variance = beta_t * (1 - alpha_cumprod_prev) / (1 - alpha_cumprod_t)
                 xt = torch.sqrt(alpha_cumprod_prev) * pred_x0 + torch.sqrt(1 - alpha_cumprod_prev - variance) * pred_noise + torch.sqrt(variance.clamp(min=0)) * noise
             else:
