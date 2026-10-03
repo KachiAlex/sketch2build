@@ -32,6 +32,28 @@ class Settings(BaseSettings):
     max_grad_norm: float = 1.0
     save_every_n_steps: int = 5000
 
+    # Vision backend: "local" (fine-tuned CLIP encoder) or "vlm" (hosted VLM)
+    vision_backend: str = "local"
+    # Ordered fallback chain of VLM providers: "grok" (xAI), "groq" (groq.com),
+    # "gemini". Each is tried in order, then the local encoder as last resort.
+    vlm_providers: str = "grok,gemini"
+    vlm_timeout: float = 60.0
+    vlm_fallback_to_local: bool = True
+
+    # xAI Grok (OpenAI-compatible API)
+    xai_api_key: str | None = None
+    xai_api_base: str = "https://api.x.ai/v1"
+    grok_model: str = "grok-4-fast-non-reasoning"
+
+    # Groq / groq.com (OpenAI-compatible API; qwen3.8-27b is their vision model)
+    groq_api_key: str | None = None
+    groq_api_base: str = "https://api.groq.com/openai/v1"
+    groq_model: str = "qwen/qwen3.8-27b"
+
+    # Google Gemini
+    gemini_api_key: str | None = None
+    gemini_model: str = "gemini-3.8-flash"
+
     # Model configs
     vision_model_name: str = "openai/clip-vit-large-patch14"
     layout_diffusion_model_name: str = "stabilityai/stable-diffusion-xl-base-1.0"

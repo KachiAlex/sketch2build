@@ -1,0 +1,61 @@
+services:
+  db:
+    image: postgres:18-alpine
+    container_name: sketch2build-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: sketch2build
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: sketch2build
+    volumes:
+      - pgdata:/var/lib/postgresql
+    ports:
+      - "127.0.0.1:5460:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sketch2build -d sketch2build"]
+      interval: 5s
+      timeout: 3s
+      retries: 24
+
+  redis:
+    image: redis:7-alpine
+    container_name: sketch2build-redis
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 24
+
+  ai:
+    build:
+      context: .
+      dockerfile: apps/ai/Dockerfile
+    container_name: sketch2build-ai
+    restart: unless-stopped
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    container_name: sketch2build-api
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      DATABASE_URL: postgresql://sketch2build:${DB_PASSWORD}@db:5432/sketch2build
+      REDIS_URL: redis://redis:6379
+      AI_SERVICE_URL: http://ai:8000
+    ports:
+      - "127.0.0.1:3401:3000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      ai:
+        condition: service_started
+
+volumes:
+  pgdata:

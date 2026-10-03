@@ -3,6 +3,7 @@
 import structlog
 from typing import Any
 
+from src.config import get_settings
 from src.inference import vision, layout
 from src.inference.text_parser import TextToGraphParser
 from src.compliance.validator import ComplianceValidator
@@ -12,13 +13,19 @@ from src.explainability.engine import ExplainabilityEngine
 from src.regional.profiles import RegionalProfileManager
 
 logger = structlog.get_logger()
+settings = get_settings()
 
 
 class DesignPipeline:
     """Orchestrates sketch understanding → layout generation → compliance → 3D."""
 
     def __init__(self):
-        self.vision_encoder = vision.SketchEncoder()
+        if settings.vision_backend == "vlm":
+            from src.inference.vlm import VLMSketchEncoder
+
+            self.vision_encoder = VLMSketchEncoder()
+        else:
+            self.vision_encoder = vision.SketchEncoder()
         self.layout_generator = layout.LayoutGenerator()
         self.compliance_validator = ComplianceValidator()
         self.extruder = FloorPlanExtruder()

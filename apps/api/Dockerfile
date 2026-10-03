@@ -3,11 +3,12 @@ FROM node:20-alpine AS base
 WORKDIR /app
 
 # Install dependencies for native modules
-RUN apk add --no-cache python3 make g++
+RUN apk add --no-cache python3 make g++ openssl libc6-compat
 
 # Copy workspace root for monorepo install
 COPY package*.json ./
 COPY apps/api/package*.json ./apps/api/
+COPY apps/api/prisma ./apps/api/prisma
 COPY packages/shared/package*.json ./packages/shared/
 
 # Install all deps
