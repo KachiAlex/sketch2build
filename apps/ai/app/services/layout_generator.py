@@ -13,10 +13,14 @@ def generate_candidates(program: dict[str, Any]) -> list[dict[str, Any]]:
     depth = site.get("depth", 10.0)
     unit = site.get("unit", "m")
     rooms = program.get("rooms", [])
+    try:
+        n_candidates = max(1, min(5, int(program.get("generate_alternatives") or 3)))
+    except (TypeError, ValueError):
+        n_candidates = 3
 
     candidates = []
     base_score = 0.75
-    for i in range(3):
+    for i in range(n_candidates):
         score = min(0.99, base_score + random.uniform(-0.1, 0.1))
         offset = i * 0.3
         candidate_rooms = []

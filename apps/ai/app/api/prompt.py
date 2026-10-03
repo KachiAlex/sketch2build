@@ -56,7 +56,8 @@ async def parse_and_generate(brief: DesignBrief) -> dict:
 @router.post("/generate-from-program")
 async def generate_from_program(req: GenerateFromProgramRequest) -> dict:
     """Internal endpoint invoked by the orchestration worker."""
-    candidates = generate_candidates(req.program)
+    program = req.program if req.program.get("rooms") else parse_brief(req.program)
+    candidates = generate_candidates(program)
     return {
         "status": "completed",
         "jobId": req.jobId,
