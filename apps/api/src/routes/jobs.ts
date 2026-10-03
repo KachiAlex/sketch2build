@@ -29,7 +29,7 @@ router.post(
     try {
       await getProject(req.body.projectId, req.user!.id);
       const job = await createGenerationJob(req.body);
-      res.status(201).json(job);
+      res.status(201).json({ job });
     } catch (err) {
       const { statusCode, body } = handleError(err);
       res.status(statusCode).json(body);

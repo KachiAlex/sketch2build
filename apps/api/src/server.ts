@@ -7,6 +7,8 @@ import authRoutes from "./routes/auth";
 import projectRoutes from "./routes/projects";
 import jobRoutes from "./routes/jobs";
 import sketchRoutes from "./routes/sketch";
+import sketchUploadRoutes from "./routes/sketchUpload";
+import regionalRoutes from "./routes/regional";
 import complianceRoutes from "./routes/compliance";
 import reviewRoutes from "./routes/review";
 import exportRoutes from "./routes/exports";
@@ -17,7 +19,7 @@ export function createServer() {
   app.use(helmet());
   app.use(cors());
   app.use(morgan("dev"));
-  app.use(express.json({ limit: "10mb" }));
+  app.use(express.json({ limit: "35mb" }));
   app.use(express.urlencoded({ extended: true }));
   app.use("/api", apiLimiter);
 
@@ -38,6 +40,8 @@ export function createServer() {
   app.use("/api/projects", projectRoutes);
   app.use("/api/jobs", jobRoutes);
   app.use("/api/projects", sketchRoutes);
+  app.use("/api/sketch", sketchUploadRoutes);
+  app.use("/api/regional", regionalRoutes);
   app.use("/api/compliance", complianceRoutes);
   app.use("/api/review", reviewRoutes);
   app.use("/api/exports", exportRoutes);
