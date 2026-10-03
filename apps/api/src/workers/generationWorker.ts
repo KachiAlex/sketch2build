@@ -97,6 +97,12 @@ function normalizeCandidates(
       rank: (candidate.rank as number) || index + 1,
       score: candidate.score as number | undefined,
       rationale: candidate.rationale as Record<string, unknown> | undefined,
+      planExtras: {
+        plot: candidate.plot,
+        doors: candidate.doors,
+        windows: candidate.windows,
+        unit: candidate.unit,
+      } as Record<string, unknown>,
       rooms: ((candidate.rooms as Array<Record<string, unknown>>) || []).map((room) => ({
         type: (room.type as string) || "room",
         label: room.label as string | undefined,

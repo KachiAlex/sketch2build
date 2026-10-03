@@ -64,6 +64,7 @@ model Candidate {
   scoreRationale      Json?
   geometryReference   String?
   complianceStatus    String       @default("pending") // pending | passed | failed
+  planExtras          Json?        // plot dims, door openings, window openings
   rooms               Room[]
   complianceViolations ComplianceViolation[]
   createdAt           DateTime     @default(now())

@@ -101,6 +101,10 @@ function serializeJobResult(job: Awaited<ReturnType<typeof getGenerationJob>>) {
       score: Math.round((c.score ?? 0) * 1000) / 10,
       scoreRationale: c.scoreRationale,
       floor_plan: {
+        plot: (c.planExtras as Record<string, unknown> | null)?.plot,
+        doors: (c.planExtras as Record<string, unknown> | null)?.doors ?? [],
+        windows: (c.planExtras as Record<string, unknown> | null)?.windows ?? [],
+        unit: (c.planExtras as Record<string, unknown> | null)?.unit ?? "m",
         rooms: (c.rooms ?? []).map((r) => ({
           id: r.id,
           type: r.type,

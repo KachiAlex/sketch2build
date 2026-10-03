@@ -73,6 +73,7 @@ export interface CandidateInput {
   rank: number;
   score?: number;
   rationale?: Record<string, unknown>;
+  planExtras?: Record<string, unknown>;
   rooms: Array<{
     type: string;
     label?: string;
@@ -90,6 +91,7 @@ export async function persistCandidates(jobId: string, candidates: CandidateInpu
         rank: candidate.rank,
         score: candidate.score,
         scoreRationale: (candidate.rationale ?? null) as never,
+        planExtras: (candidate.planExtras ?? null) as never,
         rooms: {
           create: candidate.rooms.map((room) => ({
             type: room.type,

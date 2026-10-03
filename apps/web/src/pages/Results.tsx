@@ -35,12 +35,21 @@ interface ComplianceViolation {
   severity: string;
 }
 
+interface Opening {
+  x: number;
+  y: number;
+  orientation: "h" | "v";
+}
+
 interface Alternative {
   index: number;
   candidateId: string;
   floor_plan: {
     rooms: Room[];
     plot?: { width: number; depth: number };
+    doors?: Opening[];
+    windows?: Opening[];
+    unit?: string;
   };
   compliance: {
     status: string;
@@ -273,18 +282,31 @@ function AlternativeView({
   const rooms = alt.floor_plan?.rooms || [];
   const violations = alt.compliance?.violations || [];
   const plot = alt.floor_plan?.plot;
+  const doors = alt.floor_plan?.doors || [];
+  const windows = alt.floor_plan?.windows || [];
+  const unit = alt.floor_plan?.unit || "m";
 
-  // Compute SVG bounds
+  // Compute SVG bounds — prefer the plot rect, fall back to room extents
   const allPoints = rooms.flatMap((r) => r.boundary || []);
-  const bounds = allPoints.length > 0 ? {
-    minX: Math.min(...allPoints.map((p) => p[0])),
-    minY: Math.min(...allPoints.map((p) => p[1])),
-    maxX: Math.max(...allPoints.map((p) => p[0])),
-    maxY: Math.max(...allPoints.map((p) => p[1])),
-  } : { minX: 0, minY: 0, maxX: 100, maxY: 100 };
+  const bounds = plot
+    ? { minX: 0, minY: 0, maxX: plot.width, maxY: plot.depth }
+    : allPoints.length > 0
+    ? {
+        minX: Math.min(...allPoints.map((p) => p[0])),
+        minY: Math.min(...allPoints.map((p) => p[1])),
+        maxX: Math.max(...allPoints.map((p) => p[0])),
+        maxY: Math.max(...allPoints.map((p) => p[1])),
+      }
+    : { minX: 0, minY: 0, maxX: 100, maxY: 100 };
 
-  const pad = Math.max(bounds.maxX - bounds.minX, bounds.maxY - bounds.minY) * 0.1;
+  const span = Math.max(bounds.maxX - bounds.minX, bounds.maxY - bounds.minY);
+  const pad = span * 0.14; // room for dimension lines
   const viewBox = `${bounds.minX - pad} ${bounds.minY - pad} ${bounds.maxX - bounds.minX + pad * 2} ${bounds.maxY - bounds.minY + pad * 2}`;
+  const wall = span * 0.014;
+  const doorW = span * 0.045;
+  const winW = span * 0.06;
+  const dimOff = span * 0.06;
+  const fontSize = span * 0.028;
 
   function roomCentroid(points: number[][]): [number, number] {
     const n = points.length;
@@ -335,20 +357,21 @@ function AlternativeView({
                 className="h-full w-full"
                 preserveAspectRatio="xMidYMid meet"
               >
-                {/* Plot boundary */}
+                {/* Plot boundary — dashed site line */}
                 {plot && (
                   <rect
                     x={0}
                     y={0}
                     width={plot.width}
                     height={plot.depth}
-                    fill="none"
+                    fill="#FBFAF7"
                     stroke="hsl(var(--vellum-line))"
-                    strokeWidth={0.3}
-                    strokeDasharray="2 2"
+                    strokeWidth={wall * 0.4}
+                    strokeDasharray={`${wall * 1.6} ${wall * 0.8}`}
                   />
                 )}
-                {/* Rooms */}
+
+                {/* Room fills */}
                 {rooms.map((room, i) => {
                   const pts = room.boundary;
                   if (!pts || pts.length < 3) return null;
@@ -357,26 +380,161 @@ function AlternativeView({
                     "#F8E7EC", "#E7ECF8", "#F0F8E7", "#F8E7F0",
                   ];
                   return (
-                    <g key={i}>
-                      <polygon
-                        points={pts.map((p) => `${p[0]},${p[1]}`).join(" ")}
-                        fill={colors[i % colors.length]}
-                        stroke="hsl(var(--ink))"
-                        strokeWidth={0.4}
-                      />
+                    <polygon
+                      key={i}
+                      points={pts.map((p) => `${p[0]},${p[1]}`).join(" ")}
+                      fill={colors[i % colors.length]}
+                      stroke="none"
+                    />
+                  );
+                })}
+
+                {/* Walls — drawn once per room edge, thick ink stroke */}
+                {rooms.map((room, i) => {
+                  const pts = room.boundary;
+                  if (!pts || pts.length < 3) return null;
+                  return (
+                    <polygon
+                      key={`w${i}`}
+                      points={pts.map((p) => `${p[0]},${p[1]}`).join(" ")}
+                      fill="none"
+                      stroke="hsl(var(--ink))"
+                      strokeWidth={wall}
+                      strokeLinejoin="miter"
+                    />
+                  );
+                })}
+
+                {/* Door openings: white gap + leaf line + swing arc */}
+                {doors.map((d, i) => {
+                  const horiz = d.orientation === "h";
+                  const gapProps = horiz
+                    ? { x: d.x - doorW / 2, y: d.y - wall, width: doorW, height: wall * 2 }
+                    : { x: d.x - wall, y: d.y - doorW / 2, width: wall * 2, height: doorW };
+                  // Leaf extends perpendicular into the room below/right of the gap.
+                  const leaf = horiz
+                    ? `M ${d.x - doorW / 2} ${d.y} L ${d.x - doorW / 2} ${d.y + doorW}`
+                    : `M ${d.x} ${d.y - doorW / 2} L ${d.x + doorW} ${d.y - doorW / 2}`;
+                  const arc = horiz
+                    ? `M ${d.x - doorW / 2} ${d.y + doorW} A ${doorW} ${doorW} 0 0 1 ${d.x + doorW / 2} ${d.y}`
+                    : `M ${d.x + doorW} ${d.y - doorW / 2} A ${doorW} ${doorW} 0 0 1 ${d.x} ${d.y + doorW / 2}`;
+                  return (
+                    <g key={`d${i}`}>
+                      <rect {...gapProps} fill="#FBFAF7" stroke="none" />
+                      <path d={leaf} stroke="hsl(var(--ink))" strokeWidth={wall * 0.45} fill="none" />
+                      <path d={arc} stroke="hsl(var(--muted))" strokeWidth={wall * 0.3} fill="none" strokeDasharray={`${wall * 0.5} ${wall * 0.3}`} />
+                    </g>
+                  );
+                })}
+
+                {/* Windows: white gap + blue double line */}
+                {windows.map((w, i) => {
+                  const horiz = w.orientation === "h";
+                  const gapProps = horiz
+                    ? { x: w.x - winW / 2, y: w.y - wall * 0.8, width: winW, height: wall * 1.6 }
+                    : { x: w.x - wall * 0.8, y: w.y - winW / 2, width: wall * 1.6, height: winW };
+                  const lineProps = horiz
+                    ? { x1: w.x - winW / 2, y1: w.y, x2: w.x + winW / 2, y2: w.y }
+                    : { x1: w.x, y1: w.y - winW / 2, x2: w.x, y2: w.y + winW / 2 };
+                  return (
+                    <g key={`win${i}`}>
+                      <rect {...gapProps} fill="#FBFAF7" stroke="none" />
+                      <line {...lineProps} stroke="#4A7EC2" strokeWidth={wall * 0.5} />
+                      {horiz ? (
+                        <>
+                          <line x1={w.x - winW / 2} y1={w.y - wall * 0.35} x2={w.x + winW / 2} y2={w.y - wall * 0.35} stroke="#4A7EC2" strokeWidth={wall * 0.22} />
+                          <line x1={w.x - winW / 2} y1={w.y + wall * 0.35} x2={w.x + winW / 2} y2={w.y + wall * 0.35} stroke="#4A7EC2" strokeWidth={wall * 0.22} />
+                        </>
+                      ) : (
+                        <>
+                          <line x1={w.x - wall * 0.35} y1={w.y - winW / 2} x2={w.x - wall * 0.35} y2={w.y + winW / 2} stroke="#4A7EC2" strokeWidth={wall * 0.22} />
+                          <line x1={w.x + wall * 0.35} y1={w.y - winW / 2} x2={w.x + wall * 0.35} y2={w.y + winW / 2} stroke="#4A7EC2" strokeWidth={wall * 0.22} />
+                        </>
+                      )}
+                    </g>
+                  );
+                })}
+
+                {/* Room labels + areas */}
+                {rooms.map((room, i) => {
+                  const pts = room.boundary;
+                  if (!pts || pts.length < 3) return null;
+                  const [cx, cy] = roomCentroid(pts);
+                  return (
+                    <g key={`t${i}`} className="select-none">
                       <text
-                        x={roomCentroid(pts)[0]}
-                        y={roomCentroid(pts)[1]}
+                        x={cx}
+                        y={cy - fontSize * 0.3}
                         textAnchor="middle"
-                        fontSize={Math.max(bounds.maxX - bounds.minX, bounds.maxY - bounds.minY) * 0.025}
+                        fontSize={fontSize}
+                        fontWeight={600}
                         fill="hsl(var(--ink))"
-                        className="select-none font-display"
+                        className="font-display"
                       >
                         {room.label || room.type}
+                      </text>
+                      <text
+                        x={cx}
+                        y={cy + fontSize * 0.9}
+                        textAnchor="middle"
+                        fontSize={fontSize * 0.72}
+                        fill="hsl(var(--muted))"
+                        className="font-mono-tech"
+                      >
+                        {room.area.toFixed(1)} {unit}²
                       </text>
                     </g>
                   );
                 })}
+
+                {/* Dimension lines: width along bottom, depth along left */}
+                {plot && (
+                  <g stroke="hsl(var(--muted))" strokeWidth={wall * 0.3}>
+                    {/* bottom width dimension */}
+                    <line x1={0} y1={plot.depth + dimOff} x2={plot.width} y2={plot.depth + dimOff} />
+                    <line x1={0} y1={plot.depth + dimOff - wall} x2={0} y2={plot.depth + dimOff + wall} />
+                    <line x1={plot.width} y1={plot.depth + dimOff - wall} x2={plot.width} y2={plot.depth + dimOff + wall} />
+                    <text
+                      x={plot.width / 2}
+                      y={plot.depth + dimOff + fontSize * 1.2}
+                      textAnchor="middle"
+                      fontSize={fontSize * 0.85}
+                      fill="hsl(var(--muted))"
+                      stroke="none"
+                      className="font-mono-tech"
+                    >
+                      {plot.width} {unit}
+                    </text>
+                    {/* left depth dimension */}
+                    <line x1={-dimOff} y1={0} x2={-dimOff} y2={plot.depth} />
+                    <line x1={-dimOff - wall} y1={0} x2={-dimOff + wall} y2={0} />
+                    <line x1={-dimOff - wall} y1={plot.depth} x2={-dimOff + wall} y2={plot.depth} />
+                    <text
+                      x={-dimOff - fontSize * 0.9}
+                      y={plot.depth / 2}
+                      textAnchor="middle"
+                      fontSize={fontSize * 0.85}
+                      fill="hsl(var(--muted))"
+                      stroke="none"
+                      className="font-mono-tech"
+                      transform={`rotate(-90 ${-dimOff - fontSize * 0.9} ${plot.depth / 2})`}
+                    >
+                      {plot.depth} {unit}
+                    </text>
+                  </g>
+                )}
+
+                {/* North arrow */}
+                <g transform={`translate(${bounds.maxX + pad * 0.45}, ${bounds.minY - pad * 0.35})`}>
+                  <circle r={fontSize * 0.95} fill="none" stroke="hsl(var(--muted))" strokeWidth={wall * 0.25} />
+                  <polygon
+                    points={`0,${-fontSize * 0.7} ${fontSize * 0.3},${fontSize * 0.35} 0,${fontSize * 0.1} ${-fontSize * 0.3},${fontSize * 0.35}`}
+                    fill="hsl(var(--ink))"
+                  />
+                  <text y={-fontSize * 1.15} textAnchor="middle" fontSize={fontSize * 0.7} fill="hsl(var(--ink))" className="font-mono-tech">
+                    N
+                  </text>
+                </g>
               </svg>
             </div>
             {plot && (
