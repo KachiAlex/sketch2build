@@ -6,6 +6,7 @@ import {
   createGenerationJob,
   getGenerationJob,
   listGenerationJobsByProject,
+  listRecentJobsForUser,
   finalizeJob,
 } from "../services/jobs";
 import { handleError } from "../lib/errors";
@@ -29,6 +30,24 @@ router.post(
       await getProject(req.body.projectId, req.user!.id);
       const job = await createGenerationJob(req.body);
       res.status(201).json(job);
+    } catch (err) {
+      const { statusCode, body } = handleError(err);
+      res.status(statusCode).json(body);
+    }
+  }
+);
+
+router.get(
+  "/",
+  authenticate,
+  async (req: AuthenticatedRequest, res) => {
+    try {
+      const limit = Math.min(
+        Math.max(parseInt(String(req.query.limit ?? "20"), 10) || 20, 1),
+        100
+      );
+      const jobs = await listRecentJobsForUser(req.user!.id, limit);
+      res.json({ jobs });
     } catch (err) {
       const { statusCode, body } = handleError(err);
       res.status(statusCode).json(body);

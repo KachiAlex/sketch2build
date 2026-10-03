@@ -49,6 +49,15 @@ export async function listGenerationJobsByProject(projectId: string) {
   });
 }
 
+export async function listRecentJobsForUser(userId: string, limit = 20) {
+  return prisma.generationJob.findMany({
+    where: { project: { ownerId: userId } },
+    orderBy: { createdAt: "desc" },
+    take: limit,
+    include: { candidates: true, project: { select: { id: true, name: true } } },
+  });
+}
+
 export async function updateJobStatus(
   jobId: string,
   status: string,
