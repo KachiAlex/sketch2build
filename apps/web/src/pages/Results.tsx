@@ -37,6 +37,7 @@ interface ComplianceViolation {
 
 interface Alternative {
   index: number;
+  candidateId: string;
   floor_plan: {
     rooms: Room[];
     plot?: { width: number; depth: number };
@@ -61,9 +62,9 @@ interface JobResult {
   job: {
     id: string;
     status: string;
+    rawStatus?: string;
     inputType: string;
-    style: string;
-    complianceStandard: string;
+    errorMessage?: string | null;
     createdAt: string;
   };
   alternatives: Alternative[];
@@ -98,13 +99,10 @@ export default function Results() {
   const isProcessing =
     result?.job.status === "pending" || result?.job.status === "processing";
 
-  function handleExport(altIndex: number, format: string) {
-    if (!jobId) return;
+  function handleExport(candidateId: string, format: string) {
+    const ext = format === "3d-massing" ? "json" : format;
     api
-      .download(
-        `/exports/${jobId}/${format}?alt=${altIndex}`,
-        `design-alt-${altIndex + 1}.${format}`
-      )
+      .download(`/exports/${candidateId}/${format}`, `design-${candidateId}.${ext}`)
       .catch(() => {});
   }
 
@@ -229,7 +227,7 @@ export default function Results() {
               <TabsContent key={i} value={String(i)}>
                 <AlternativeView
                   alt={alt}
-                  onExport={(fmt) => handleExport(i, fmt)}
+                  onExport={(fmt) => handleExport(alt.candidateId, fmt)}
                 />
               </TabsContent>
             ))}
@@ -253,7 +251,7 @@ export default function Results() {
           <CardContent className="py-12 text-center">
             <XCircle className="mx-auto mb-3 h-8 w-8 text-destructive" />
             <p className="text-sm text-destructive">
-              Generation failed. Please try again.
+              {result.job.errorMessage || "Generation failed. Please try again."}
             </p>
             <Button variant="outline" className="mt-4" asChild>
               <Link to="/prompt">New generation</Link>
@@ -305,8 +303,20 @@ function AlternativeView({
             <div className="flex items-center justify-between">
               <CardTitle className="text-lg">Floor Plan</CardTitle>
               <div className="flex items-center gap-2">
-                <Badge variant={alt.compliance?.status === "pass" ? "success" : "warning"}>
-                  {alt.compliance?.status === "pass" ? "Compliant" : "Has Issues"}
+                <Badge
+                  variant={
+                    alt.compliance?.status === "pass"
+                      ? "success"
+                      : alt.compliance?.status === "fail"
+                      ? "warning"
+                      : "outline"
+                  }
+                >
+                  {alt.compliance?.status === "pass"
+                    ? "Compliant"
+                    : alt.compliance?.status === "fail"
+                    ? "Has Issues"
+                    : "Not validated"}
                 </Badge>
                 <Badge variant="blueprint">
                   Score: {alt.score.toFixed(1)}
@@ -514,8 +524,8 @@ function AlternativeView({
               <Button variant="outline" size="sm" onClick={() => onExport("ifc")}>
                 IFC
               </Button>
-              <Button variant="outline" size="sm" onClick={() => onExport("glb")}>
-                GLB (3D)
+              <Button variant="outline" size="sm" onClick={() => onExport("3d-massing")}>
+                3D Massing
               </Button>
               <Button variant="outline" size="sm" onClick={() => onExport("png")}>
                 PNG
@@ -527,7 +537,7 @@ function AlternativeView({
               className="mt-3 w-full"
               asChild
             >
-              <Link to={`/review?candidateId=${alt.index}`}>
+              <Link to={`/review?candidateId=${alt.candidateId}`}>
                 <Eye className="mr-2 h-4 w-4" />
                 Review & Edit
               </Link>

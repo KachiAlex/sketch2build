@@ -1,5 +1,5 @@
-import { Router } from "express";
-import { authenticate, AuthenticatedRequest, requireRole } from "../middleware/auth";
+import { Router, Response } from "express";
+import { authenticate, AuthenticatedRequest } from "../middleware/auth";
 import { generateExport, recordExport } from "../services/exports";
 import { handleError } from "../lib/errors";
 
@@ -7,10 +7,7 @@ const router = Router();
 
 const ALLOWED_FORMATS = ["dxf", "pdf", "png", "ifc", "3d-massing"];
 
-router.post(
-  "/:candidateId/:format",
-  authenticate,
-  async (req: AuthenticatedRequest, res) => {
+const exportHandler = async (req: AuthenticatedRequest, res: Response) => {
     try {
       const { candidateId, format } = req.params;
       if (!ALLOWED_FORMATS.includes(format)) {
@@ -40,7 +37,9 @@ router.post(
       const { statusCode, body } = handleError(err);
       res.status(statusCode).json(body);
     }
-  }
-);
+};
+
+router.post("/:candidateId/:format", authenticate, exportHandler);
+router.get("/:candidateId/:format", authenticate, exportHandler);
 
 export default router;

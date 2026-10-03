@@ -33,7 +33,7 @@ export async function createGenerationJob(input: JobInput) {
 export async function getGenerationJob(jobId: string) {
   const job = await prisma.generationJob.findUnique({
     where: { id: jobId },
-    include: { candidates: true },
+    include: { candidates: { include: { rooms: true, complianceViolations: true } } },
   });
   if (!job) {
     throw new AppError(404, "Job not found", "JOB_NOT_FOUND");

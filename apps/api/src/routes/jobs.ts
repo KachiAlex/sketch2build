@@ -70,17 +70,65 @@ router.get(
   }
 );
 
+const JOB_STATUS_MAP: Record<string, string> = {
+  queued: "pending",
+  processing: "processing",
+  candidates_ready: "completed",
+  under_review: "completed",
+  finalized: "completed",
+  failed: "failed",
+};
+
+const COMPLIANCE_STATUS_MAP: Record<string, string> = {
+  passed: "pass",
+  failed: "fail",
+};
+
+function serializeJobResult(job: Awaited<ReturnType<typeof getGenerationJob>>) {
+  const candidates = [...(job.candidates ?? [])].sort((a, b) => a.rank - b.rank);
+  return {
+    job: {
+      id: job.id,
+      status: JOB_STATUS_MAP[job.status] ?? job.status,
+      rawStatus: job.status,
+      inputType: job.sourceType,
+      errorMessage: job.errorMessage,
+      createdAt: job.createdAt,
+    },
+    alternatives: candidates.map((c, i) => ({
+      index: i,
+      candidateId: c.id,
+      score: Math.round((c.score ?? 0) * 1000) / 10,
+      scoreRationale: c.scoreRationale,
+      floor_plan: {
+        rooms: (c.rooms ?? []).map((r) => ({
+          id: r.id,
+          type: r.type,
+          label: r.label,
+          area: r.area,
+          boundary: r.boundaryGeometry,
+        })),
+      },
+      compliance: {
+        status: COMPLIANCE_STATUS_MAP[c.complianceStatus] ?? "pending",
+        violations: (c.complianceViolations ?? []).map((v) => ({
+          ruleId: v.ruleId,
+          message: v.message,
+          severity: v.severity,
+        })),
+      },
+    })),
+  };
+}
+
 router.get(
   "/:id",
   authenticate,
   async (req: AuthenticatedRequest, res) => {
     try {
       const job = await getGenerationJob(req.params.id);
-      if (job.projectId !== req.user!.id) {
-        // In a real system, check project ownership. Here we reuse getProject for ownership.
-        await getProject(job.projectId, req.user!.id);
-      }
-      res.json(job);
+      await getProject(job.projectId, req.user!.id);
+      res.json(serializeJobResult(job));
     } catch (err) {
       const { statusCode, body } = handleError(err);
       res.status(statusCode).json(body);
