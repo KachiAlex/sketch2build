@@ -1,4 +1,5 @@
 import bcrypt from "bcryptjs";
+import crypto from "crypto";
 import jwt from "jsonwebtoken";
 import { prisma } from "../lib/prisma";
 import { JWT_SECRET, JWT_EXPIRES_IN } from "../lib/config";
@@ -91,6 +92,63 @@ export async function changePassword(userId: string, currentPassword: string, ne
   }
   const passwordHash = await bcrypt.hash(newPassword, SALT_ROUNDS);
   await prisma.user.update({ where: { id: userId }, data: { passwordHash } });
+}
+
+const RESET_TOKEN_TTL_MS = 60 * 60 * 1000; // 1 hour
+
+export async function requestPasswordReset(email: string) {
+  const user = await prisma.user.findUnique({ where: { email } });
+  if (!user) {
+    return; // don't leak whether the account exists
+  }
+  const token = crypto.randomBytes(32).toString("hex");
+  await prisma.passwordResetToken.create({
+    data: { userId: user.id, token, expiresAt: new Date(Date.now() + RESET_TOKEN_TTL_MS) },
+  });
+  const appUrl = process.env.APP_URL || "https://sketch2build-web.vercel.app";
+  const resetUrl = `${appUrl}/reset-password?token=${token}`;
+  await sendResetEmail(user.email, resetUrl);
+}
+
+async function sendResetEmail(email: string, resetUrl: string) {
+  const apiKey = process.env.BREVO_API_KEY;
+  if (!apiKey) {
+    // No mail provider configured — log the link so reset still works in dev/ops.
+    // eslint-disable-next-line no-console
+    console.log(`[password-reset] ${email}: ${resetUrl}`);
+    return;
+  }
+  try {
+    await fetch("https://api.brevo.com/v3/smtp/email", {
+      method: "POST",
+      headers: { "api-key": apiKey, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        sender: {
+          email: process.env.BREVO_SENDER_EMAIL || "noreply@sketch2build.com",
+          name: "Sketch2Build",
+        },
+        to: [{ email }],
+        subject: "Reset your Sketch2Build password",
+        htmlContent: `<p>You requested a password reset for your Sketch2Build account.</p><p><a href="${resetUrl}">Reset your password</a> — the link is valid for 1 hour.</p><p>If you didn't request this, ignore this email.</p>`,
+      }),
+    });
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error("[password-reset] email send failed:", err);
+  }
+}
+
+export async function resetPassword(token: string, newPassword: string) {
+  const record = await prisma.passwordResetToken.findUnique({ where: { token } });
+  if (!record || record.usedAt || record.expiresAt < new Date()) {
+    throw new AppError(400, "Invalid or expired reset token", "INVALID_RESET_TOKEN");
+  }
+  const passwordHash = await bcrypt.hash(newPassword, SALT_ROUNDS);
+  await prisma.user.update({ where: { id: record.userId }, data: { passwordHash } });
+  await prisma.passwordResetToken.update({
+    where: { id: record.id },
+    data: { usedAt: new Date() },
+  });
 }
 
 export async function getUserById(id: string) {

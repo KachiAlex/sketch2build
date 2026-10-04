@@ -75,3 +75,18 @@ def get_nigeria_rules() -> List[Dict[str, Any]]:
 RULESETS: Dict[str, Dict[str, Any]] = {
     "Nigeria": NIGERIA_NBC,
 }
+
+# Canonical keys recognised by the validator. Project.jurisdiction is free
+# text upstream, so map common spellings onto ruleset keys.
+JURISDICTION_ALIASES = {
+    "nigeria": "Nigeria",
+    "nbc": "Nigeria",
+    "nbc-nigeria": "Nigeria",
+    "nigerian building code": "Nigeria",
+    "ng": "Nigeria",
+}
+
+
+def canonical_jurisdiction(raw: str) -> str:
+    key = str(raw or "").strip().lower()
+    return JURISDICTION_ALIASES.get(key, str(raw or "").strip())

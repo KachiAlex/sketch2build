@@ -10,6 +10,8 @@ import { Badge } from "../components/ui/badge";
 import { Skeleton } from "../components/ui/skeleton";
 import { useToast } from "../components/ui/toast";
 import {
+  ChevronDown,
+  ChevronRight,
   Loader2,
   Search,
   ShieldCheck,
@@ -18,6 +20,7 @@ import {
   Users,
   FolderKanban,
   Layers,
+  ScrollText,
   Shapes,
   UserX,
 } from "lucide-react";
@@ -50,6 +53,30 @@ interface Stats {
   plans: Record<string, number>;
 }
 
+interface UserProject {
+  id: string;
+  name: string;
+  jurisdiction: string;
+  status: string;
+  jobCount: number;
+  createdAt: string;
+}
+
+interface UserDetail {
+  user: AdminUser;
+  projects: UserProject[];
+}
+
+interface AuditEntry {
+  id: string;
+  actor: string;
+  action: string;
+  targetType: string;
+  targetId: string;
+  metadata: Record<string, unknown> | null;
+  createdAt: string;
+}
+
 const ROLES = ["architect", "drafter", "developer", "homeowner", "admin"];
 const PLANS = ["free", "pro", "studio"];
 const PAGE_SIZE = 20;
@@ -65,19 +92,24 @@ export default function Admin() {
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
+  const [expandedUser, setExpandedUser] = useState<string | null>(null);
+  const [detail, setDetail] = useState<UserDetail | null>(null);
+  const [audit, setAudit] = useState<AuditEntry[]>([]);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [s, u] = await Promise.all([
+      const [s, u, a] = await Promise.all([
         api.get<Stats>("/admin/stats"),
         api.get<{ total: number; users: AdminUser[] }>(
           `/admin/users?page=${page}&limit=${PAGE_SIZE}${query ? `&q=${encodeURIComponent(query)}` : ""}`
         ),
+        api.get<{ entries: AuditEntry[] }>("/admin/audit?limit=50"),
       ]);
       setStats(s);
       setUsers(u.users);
       setTotal(u.total);
+      setAudit(a.entries);
     } catch {
       // non-admin or network error — page guard handles the former
     } finally {
@@ -134,6 +166,25 @@ export default function Admin() {
       toast({ title: "Failed", description: err instanceof Error ? err.message : "Plan update failed", variant: "error" });
     } finally {
       setBusy(null);
+    }
+  }
+
+  async function toggleExpand(id: string) {
+    if (expandedUser === id) {
+      setExpandedUser(null);
+      setDetail(null);
+      return;
+    }
+    setExpandedUser(id);
+    setDetail(null);
+    try {
+      const [user, proj] = await Promise.all([
+        api.get<AdminUser>(`/admin/users/${id}`),
+        api.get<{ projects: UserProject[] }>(`/admin/users/${id}/projects`),
+      ]);
+      setDetail({ user, projects: proj.projects });
+    } catch {
+      setDetail(null);
     }
   }
 
@@ -237,11 +288,24 @@ export default function Admin() {
           ) : (
             users.map((u) => {
               const isSelf = u.id === user?.id;
+              const expanded = expandedUser === u.id;
               return (
+                <div key={u.id}>
                 <div
-                  key={u.id}
                   className="flex flex-wrap items-center gap-3 rounded-[2px] border-[1.5px] border-vellum-line bg-white/60 px-4 py-3"
                 >
+                  <button
+                    type="button"
+                    onClick={() => toggleExpand(u.id)}
+                    className="text-muted hover:text-ink"
+                    aria-label={expanded ? "Collapse details" : "Expand details"}
+                  >
+                    {expanded ? (
+                      <ChevronDown className="h-4 w-4" />
+                    ) : (
+                      <ChevronRight className="h-4 w-4" />
+                    )}
+                  </button>
                   <div className="min-w-[220px] flex-1">
                     <div className="flex items-center gap-2">
                       <p className="font-display text-sm font-semibold text-ink">{u.name}</p>
@@ -315,6 +379,43 @@ export default function Admin() {
                     </Button>
                   </div>
                 </div>
+                {expanded && (
+                  <div className="mx-4 mb-1 rounded-b-[2px] border-[1.5px] border-t-0 border-vellum-line bg-vellum/40 px-4 py-3">
+                    {!detail ? (
+                      <p className="font-mono-tech text-xs text-muted">Loading details…</p>
+                    ) : (
+                      <div className="space-y-2">
+                        <p className="font-mono-tech text-[11px] uppercase text-muted">
+                          joined {new Date(detail.user.createdAt).toLocaleDateString()}
+                          {detail.user.subscription
+                            ? ` · ${detail.user.subscription.plan} (${detail.user.subscription.status}) · ${detail.user.subscription.seats} seat(s)`
+                            : " · no subscription"}
+                          {detail.user.subscription?.renewsAt
+                            ? ` · renews ${new Date(detail.user.subscription.renewsAt).toLocaleDateString()}`
+                            : ""}
+                        </p>
+                        {detail.projects.length === 0 ? (
+                          <p className="text-xs text-muted-foreground">No projects.</p>
+                        ) : (
+                          <ul className="space-y-1">
+                            {detail.projects.map((p) => (
+                              <li
+                                key={p.id}
+                                className="flex items-center justify-between text-xs"
+                              >
+                                <span className="font-medium text-ink">{p.name}</span>
+                                <span className="font-mono-tech text-muted">
+                                  {p.jurisdiction} · {p.jobCount} job{p.jobCount === 1 ? "" : "s"} · {p.status}
+                                </span>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+                </div>
               );
             })
           )}
@@ -335,6 +436,41 @@ export default function Admin() {
               >
                 Next
               </Button>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card className="border-[1.5px] border-vellum-line">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <ScrollText className="h-4 w-4 text-blueprint" />
+            Audit log
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {audit.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No admin actions recorded yet.</p>
+          ) : (
+            <div className="space-y-1">
+              {audit.map((e) => (
+                <div
+                  key={e.id}
+                  className="flex flex-wrap items-baseline justify-between gap-2 border-b border-vellum-line pb-1.5 text-xs last:border-0"
+                >
+                  <div>
+                    <span className="font-medium text-ink">{e.actor}</span>{" "}
+                    <span className="text-muted-foreground">{e.action.replace(/_/g, " ")}</span>{" "}
+                    <span className="font-mono-tech text-muted">{e.targetType}:{e.targetId.slice(0, 8)}</span>
+                    {e.metadata && Object.keys(e.metadata).length > 0 && (
+                      <span className="font-mono-tech text-muted"> — {JSON.stringify(e.metadata)}</span>
+                    )}
+                  </div>
+                  <span className="font-mono-tech text-muted">
+                    {new Date(e.createdAt).toLocaleString()}
+                  </span>
+                </div>
+              ))}
             </div>
           )}
         </CardContent>

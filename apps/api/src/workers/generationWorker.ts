@@ -2,6 +2,7 @@ import { Job } from "bullmq";
 import { createGenerationWorker } from "../lib/queue";
 import { updateJobStatus, persistCandidates } from "../services/jobs";
 import { validateCandidate } from "../services/compliance";
+import { prisma } from "../lib/prisma";
 
 export interface GenerationJobData {
   jobId: string;
@@ -20,6 +21,7 @@ async function callSketchDigitization(jobData: GenerationJobData) {
     body: JSON.stringify({
       storageKey: jobData.inputReference,
       referenceLength: jobData.payload?.referenceLength,
+      referencePixels: jobData.payload?.referencePixels,
       unit: jobData.payload?.unit,
       projectId: jobData.projectId,
       jobId: jobData.jobId,
@@ -51,9 +53,22 @@ async function callPromptGeneration(jobData: GenerationJobData) {
   return response.json();
 }
 
+async function isJobActive(jobId: string) {
+  const current = await prisma.generationJob.findUnique({
+    where: { id: jobId },
+    select: { status: true },
+  });
+  // A cancelled job is marked failed — it must stay failed when the queued
+  // BullMQ entry eventually runs.
+  return current && (current.status === "queued" || current.status === "processing");
+}
+
 async function processGenerationJob(job: Job<GenerationJobData>) {
   const { jobId, sourceType } = job.data;
 
+  if (!(await isJobActive(jobId))) {
+    return;
+  }
   await updateJobStatus(jobId, "processing");
 
   try {
@@ -62,6 +77,11 @@ async function processGenerationJob(job: Job<GenerationJobData>) {
       result = await callSketchDigitization(job.data);
     } else if (sourceType === "prompt") {
       result = await callPromptGeneration(job.data);
+    }
+
+    // The user may have cancelled while the AI service was generating.
+    if (!(await isJobActive(jobId))) {
+      return;
     }
 
     const candidates = normalizeCandidates(sourceType, result);
@@ -93,10 +113,12 @@ function normalizeCandidates(
   rank: number;
   score?: number;
   rationale?: Record<string, unknown>;
+  planExtras?: Record<string, unknown>;
   rooms: Array<{
     type: string;
     label?: string;
     area: number;
+    floor?: number;
     boundaryGeometry: unknown;
     adjacentRoomIds?: string[];
   }>;
@@ -112,11 +134,13 @@ function normalizeCandidates(
         doors: candidate.doors,
         windows: candidate.windows,
         unit: candidate.unit,
+        floors: candidate.floors,
       } as Record<string, unknown>,
       rooms: ((candidate.rooms as Array<Record<string, unknown>>) || []).map((room) => ({
         type: (room.type as string) || "room",
         label: room.label as string | undefined,
         area: (room.area as number) || 0,
+        floor: (room.floor as number) || 1,
         boundaryGeometry: room.boundaryGeometry,
       })),
     }));
@@ -124,27 +148,30 @@ function normalizeCandidates(
 
   // Sketch digitization returns a single set of geometry; wrap it as one candidate.
   const rooms = (result.rooms as Array<Record<string, unknown>>) || [];
-  const walls = (result.walls as Array<Record<string, unknown>>) || [];
+  if (result.status === "failed" || !rooms.length) {
+    throw new Error((result.error as string) || "Sketch digitization produced no rooms");
+  }
   return [
     {
       rank: 1,
       score: undefined,
-      rationale: { source: "sketch-digitization", wallsDetected: walls.length },
-      rooms: rooms.length
-        ? rooms.map((room) => ({
-            type: (room.type as string) || "room",
-            label: room.label as string | undefined,
-            area: (room.area as number) || 0,
-            boundaryGeometry: room.boundaryGeometry,
-          }))
-        : [
-            {
-              type: "sketch-region",
-              label: "Detected sketch region",
-              area: 0,
-              boundaryGeometry: walls,
-            },
-          ],
+      rationale: {
+        source: (result.source as string) || "sketch-digitization",
+        scale: result.scale as string | undefined,
+      },
+      planExtras: {
+        plot: result.plot,
+        doors: result.doors,
+        windows: result.windows,
+        unit: result.unit,
+      } as Record<string, unknown>,
+      rooms: rooms.map((room) => ({
+        type: (room.type as string) || "room",
+        label: room.label as string | undefined,
+        area: (room.area as number) || 0,
+        floor: 1,
+        boundaryGeometry: room.boundaryGeometry,
+      })),
     },
   ];
 }

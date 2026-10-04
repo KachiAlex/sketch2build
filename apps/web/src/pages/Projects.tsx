@@ -23,6 +23,7 @@ const PAGE_SIZE = 6;
 export default function Projects() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
+  const [jurisdictions, setJurisdictions] = useState<string[]>(["Nigeria"]);
   const [form, setForm] = useState({ name: "", jurisdiction: "Nigeria", plotWidth: "", plotDepth: "", plotUnit: "m" as "m" | "ft" });
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -43,6 +44,15 @@ export default function Projects() {
 
   useEffect(() => {
     loadProjects();
+    api
+      .get<{ jurisdictions: string[] }>("/compliance/jurisdictions")
+      .then((d) => {
+        if (d.jurisdictions.length > 0) {
+          setJurisdictions(d.jurisdictions);
+          setForm((f) => ({ ...f, jurisdiction: d.jurisdictions[0] }));
+        }
+      })
+      .catch(() => {});
   }, []);
 
   async function handleSubmit(e: React.FormEvent) {
@@ -92,7 +102,17 @@ export default function Projects() {
             </div>
             <div className="space-y-2">
               <Label htmlFor="jurisdiction">Jurisdiction</Label>
-              <Input id="jurisdiction" value={form.jurisdiction} onChange={(e) => setForm({ ...form, jurisdiction: e.target.value })} required />
+              <Select
+                id="jurisdiction"
+                value={form.jurisdiction}
+                onChange={(e) => setForm({ ...form, jurisdiction: e.target.value })}
+              >
+                {jurisdictions.map((j) => (
+                  <option key={j} value={j}>
+                    {j}
+                  </option>
+                ))}
+              </Select>
             </div>
             <div className="space-y-2">
               <Label htmlFor="plotWidth">Plot width</Label>

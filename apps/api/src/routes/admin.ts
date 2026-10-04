@@ -13,6 +13,8 @@ import {
   setUserStatus,
   setUserSubscription,
   deleteUser,
+  listUserProjects,
+  listAuditLog,
 } from "../services/admin";
 import { handleError } from "../lib/errors";
 
@@ -59,6 +61,25 @@ router.get("/users/:id", async (req: AuthenticatedRequest, res) => {
   }
 });
 
+router.get("/users/:id/projects", async (req: AuthenticatedRequest, res) => {
+  try {
+    res.json({ projects: await listUserProjects(req.params.id) });
+  } catch (err) {
+    const { statusCode, body } = handleError(err);
+    res.status(statusCode).json(body);
+  }
+});
+
+router.get("/audit", async (req: AuthenticatedRequest, res) => {
+  try {
+    const limit = Math.min(500, Math.max(1, parseInt(String(req.query.limit ?? "100"), 10) || 100));
+    res.json({ entries: await listAuditLog(limit) });
+  } catch (err) {
+    const { statusCode, body } = handleError(err);
+    res.status(statusCode).json(body);
+  }
+});
+
 router.patch("/users/:id/role", validateBody(roleSchema), async (req: AuthenticatedRequest, res) => {
   try {
     res.json(await setUserRole(req.user!.id, req.params.id, req.body.role));
@@ -87,7 +108,7 @@ router.patch(
         renewsAt:
           req.body.renewsAt === undefined ? undefined : req.body.renewsAt ? new Date(req.body.renewsAt) : null,
       };
-      res.json(await setUserSubscription(req.params.id, input));
+      res.json(await setUserSubscription(req.user!.id, req.params.id, input));
     } catch (err) {
       const { statusCode, body } = handleError(err);
       res.status(statusCode).json(body);

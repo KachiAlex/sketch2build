@@ -3,6 +3,21 @@ import { AppError } from "../lib/errors";
 
 const AI_SERVICE_URL = process.env.AI_SERVICE_URL || "http://localhost:8000";
 
+// Mirrors apps/ai/app/compliance/rules.py canonical_jurisdiction — project
+// jurisdiction is free text upstream so DB rules must resolve by canonical key.
+const JURISDICTION_ALIASES: Record<string, string> = {
+  nigeria: "Nigeria",
+  nbc: "Nigeria",
+  "nbc-nigeria": "Nigeria",
+  "nigerian building code": "Nigeria",
+  ng: "Nigeria",
+};
+
+function canonicalJurisdiction(raw: string) {
+  const key = (raw || "").trim().toLowerCase();
+  return JURISDICTION_ALIASES[key] ?? (raw || "").trim();
+}
+
 export async function validateCandidate(candidateId: string) {
   const candidate = await prisma.candidate.findUnique({
     where: { id: candidateId },
@@ -34,14 +49,31 @@ export async function validateCandidate(candidateId: string) {
       type: room.type,
       label: room.label,
       area: room.area,
+      floor: room.floor,
       boundaryGeometry: room.boundaryGeometry,
     })),
   };
 
+  // DB rules (admin-managed) merge over the AI service's base ruleset. Match
+  // on the canonical jurisdiction so "NBC-Nigeria" rows apply to "Nigeria"
+  // projects and vice versa.
+  const canonical = canonicalJurisdiction(project.jurisdiction);
+  const allRules = await prisma.complianceRule.findMany({
+    select: { jurisdiction: true, ruleType: true, parameters: true },
+  });
+  const dbRules = allRules.filter(
+    (r) => canonicalJurisdiction(r.jurisdiction) === canonical
+  );
+
   const response = await fetch(`${AI_SERVICE_URL}/compliance/validate`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ layout, jurisdiction: project.jurisdiction }),
+    body: JSON.stringify({
+      layout,
+      jurisdiction: project.jurisdiction,
+      rules: dbRules,
+      repair: true,
+    }),
   });
 
   if (!response.ok) {
@@ -60,7 +92,43 @@ export async function validateCandidate(candidateId: string) {
       severity: string;
     }>;
     passed: boolean;
+    repaired?: boolean;
+    repairLog?: string[];
+    layout?: {
+      rooms?: Array<{ boundaryGeometry?: unknown; area?: number }>;
+      plot?: unknown;
+      doors?: unknown;
+      windows?: unknown;
+    };
   };
+
+  // Persist repaired geometry when the validator fixed violations.
+  if (result.repairLog?.length && result.layout?.rooms?.length === candidate.rooms.length) {
+    for (let i = 0; i < candidate.rooms.length; i++) {
+      const repaired = result.layout.rooms[i];
+      if (!repaired?.boundaryGeometry) continue;
+      await prisma.room.update({
+        where: { id: candidate.rooms[i].id },
+        data: {
+          boundaryGeometry: repaired.boundaryGeometry as never,
+          area: repaired.area ?? candidate.rooms[i].area,
+        },
+      });
+    }
+    const extras = (candidate.planExtras ?? {}) as Record<string, unknown>;
+    await prisma.candidate.update({
+      where: { id: candidateId },
+      data: {
+        planExtras: {
+          ...extras,
+          plot: result.layout.plot ?? extras.plot,
+          doors: result.layout.doors ?? extras.doors,
+          windows: result.layout.windows ?? extras.windows,
+          repairLog: result.repairLog,
+        } as never,
+      },
+    });
+  }
 
   // Clear previous violations and store new ones
   await prisma.complianceViolation.deleteMany({ where: { candidateId } });

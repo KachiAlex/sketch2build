@@ -55,6 +55,18 @@ async function adminCount() {
   return prisma.user.count({ where: { role: "admin" } });
 }
 
+async function audit(
+  actorId: string,
+  action: string,
+  targetType: string,
+  targetId: string,
+  metadata?: Record<string, unknown>
+) {
+  await prisma.auditLog.create({
+    data: { actorId, action, targetType, targetId, metadata: (metadata ?? null) as never },
+  });
+}
+
 export async function getAdminStats() {
   const [users, suspendedUsers, projects, jobs, candidates, plans] = await Promise.all([
     prisma.user.count(),
@@ -128,6 +140,7 @@ export async function setUserRole(actorId: string, userId: string, role: (typeof
     data: { role },
     include: { subscription: true, _count: { select: { projects: true } } },
   });
+  await audit(actorId, "role_change", "user", userId, { from: target.role, to: role });
   return serializeUser(user);
 }
 
@@ -144,10 +157,12 @@ export async function setUserStatus(actorId: string, userId: string, status: "ac
     data: { status },
     include: { subscription: true, _count: { select: { projects: true } } },
   });
+  await audit(actorId, "status_change", "user", userId, { from: target.status, to: status });
   return serializeUser(user);
 }
 
 export async function setUserSubscription(
+  actorId: string,
   userId: string,
   input: {
     plan?: (typeof PLANS)[number];
@@ -172,6 +187,11 @@ export async function setUserSubscription(
       seats: input.seats,
       renewsAt: input.renewsAt,
     },
+  });
+  await audit(actorId, "plan_change", "subscription", userId, {
+    plan: subscription.plan,
+    status: subscription.status,
+    seats: subscription.seats,
   });
   return {
     plan: subscription.plan,
@@ -212,4 +232,51 @@ export async function deleteUser(actorId: string, userId: string) {
     await tx.project.deleteMany({ where: { ownerId: userId } });
     await tx.user.delete({ where: { id: userId } });
   });
+  await audit(actorId, "user_delete", "user", userId, { email: target.email });
+}
+
+export async function listUserProjects(userId: string) {
+  await requireUser(userId);
+  const projects = await prisma.project.findMany({
+    where: { ownerId: userId },
+    orderBy: { createdAt: "desc" },
+    select: {
+      id: true,
+      name: true,
+      status: true,
+      jurisdiction: true,
+      createdAt: true,
+      _count: { select: { generationJobs: true } },
+    },
+  });
+  return projects.map((p) => ({
+    id: p.id,
+    name: p.name,
+    status: p.status,
+    jurisdiction: p.jurisdiction,
+    jobCount: p._count.generationJobs,
+    createdAt: p.createdAt.toISOString(),
+  }));
+}
+
+export async function listAuditLog(limit = 100) {
+  const entries = await prisma.auditLog.findMany({
+    orderBy: { createdAt: "desc" },
+    take: Math.min(limit, 500),
+  });
+  const actorIds = [...new Set(entries.map((e) => e.actorId))];
+  const actors = await prisma.user.findMany({
+    where: { id: { in: actorIds } },
+    select: { id: true, email: true },
+  });
+  const actorMap = new Map(actors.map((a) => [a.id, a.email]));
+  return entries.map((e) => ({
+    id: e.id,
+    actor: actorMap.get(e.actorId) ?? e.actorId,
+    action: e.action,
+    targetType: e.targetType,
+    targetId: e.targetId,
+    metadata: e.metadata,
+    createdAt: e.createdAt.toISOString(),
+  }));
 }

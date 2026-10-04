@@ -3,6 +3,7 @@ import { z } from "zod";
 import { validateBody } from "../middleware/validate";
 import { authenticate, AuthenticatedRequest, requireRole } from "../middleware/auth";
 import { createProject, listProjectsByOwner, getProject, updateProject, deleteProject } from "../services/projects";
+import { assertProjectQuota } from "../services/entitlements";
 import { handleError } from "../lib/errors";
 
 const router = Router();
@@ -25,6 +26,7 @@ router.post(
   validateBody(projectSchema),
   async (req: AuthenticatedRequest, res) => {
     try {
+      await assertProjectQuota(req.user!.id);
       const project = await createProject({ ownerId: req.user!.id, ...req.body });
       res.status(201).json(project);
     } catch (err) {

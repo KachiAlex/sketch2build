@@ -340,8 +340,8 @@ export default function Review() {
               <Button variant="outline" onClick={() => handleExport("png", `layout-${candidateId}.png`)}>
                 PNG
               </Button>
-              <Button variant="outline" className="col-span-2" onClick={() => handleExport("3d-massing", `massing-${candidateId}.json`)}>
-                3D Massing (JSON)
+              <Button variant="outline" className="col-span-2" onClick={() => handleExport("3d-massing", `massing-${candidateId}.glb`)}>
+                3D Massing (GLB)
               </Button>
             </div>
           </CardContent>

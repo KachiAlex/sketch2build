@@ -13,6 +13,9 @@ import complianceRoutes from "./routes/compliance";
 import reviewRoutes from "./routes/review";
 import exportRoutes from "./routes/exports";
 import adminRoutes from "./routes/admin";
+import meRoutes from "./routes/me";
+import organizationRoutes from "./routes/organizations";
+import { prisma } from "./lib/prisma";
 
 export function createServer() {
   const app = express();
@@ -24,6 +27,25 @@ export function createServer() {
   app.use(express.urlencoded({ extended: true }));
   app.use("/api", apiLimiter);
 
+  // Persist server errors for the admin dashboard (best-effort, never blocks).
+  app.use((req: Request, res: Response, next) => {
+    res.on("finish", () => {
+      if (res.statusCode >= 500) {
+        prisma.errorLog
+          .create({
+            data: {
+              method: req.method,
+              path: req.originalUrl.slice(0, 500),
+              statusCode: res.statusCode,
+              message: res.locals?.errorMessage || `${req.method} ${req.originalUrl} failed`,
+            },
+          })
+          .catch(() => undefined);
+      }
+    });
+    next();
+  });
+
   app.get("/health", (_req: Request, res: Response) => {
     res.json({ status: "ok", service: "api-gateway" });
   });
@@ -32,7 +54,18 @@ export function createServer() {
     res.json({
       name: "Sketch2Build API",
       version: "0.1.0",
-      modules: ["auth", "projects", "jobs", "compliance", "review", "exports"],
+      modules: [
+        "auth",
+        "projects",
+        "jobs",
+        "sketch",
+        "regional",
+        "compliance",
+        "review",
+        "exports",
+        "admin",
+        "organizations",
+      ],
       note: "OpenAPI spec will be published once Phase 1 endpoints are finalized.",
     });
   });
@@ -47,6 +80,8 @@ export function createServer() {
   app.use("/api/review", reviewRoutes);
   app.use("/api/exports", exportRoutes);
   app.use("/api/admin", adminRoutes);
+  app.use("/api/me", meRoutes);
+  app.use("/api/organizations", organizationRoutes);
 
   app.use((_req: Request, res: Response) => {
     res.status(404).json({ error: "Not found" });

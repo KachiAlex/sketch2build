@@ -25,6 +25,7 @@ interface Room {
   type: string;
   label?: string;
   area: number;
+  floor?: number;
   boundary?: number[][];
   bbox?: { x: number; y: number; width: number; depth: number };
 }
@@ -39,6 +40,7 @@ interface Opening {
   x: number;
   y: number;
   orientation: "h" | "v";
+  floor?: number;
 }
 
 interface Alternative {
@@ -47,9 +49,11 @@ interface Alternative {
   floor_plan: {
     rooms: Room[];
     plot?: { width: number; depth: number };
+    floors?: number;
     doors?: Opening[];
     windows?: Opening[];
     unit?: string;
+    repairLog?: string[];
   };
   compliance: {
     status: string;
@@ -85,6 +89,8 @@ export default function Results() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedAlt, setSelectedAlt] = useState(0);
+  const [pollElapsed, setPollElapsed] = useState(0);
+  const [busyAction, setBusyAction] = useState(false);
 
   const pollJob = useCallback(async () => {
     if (!jobId) return;
@@ -92,6 +98,7 @@ export default function Results() {
       const data = await api.get<JobResult>(`/jobs/${jobId}`);
       setResult(data);
       if (data.job.status === "pending" || data.job.status === "processing") {
+        setPollElapsed((e) => e + 3);
         setTimeout(pollJob, 3000);
       }
       setLoading(false);
@@ -109,10 +116,46 @@ export default function Results() {
     result?.job.status === "pending" || result?.job.status === "processing";
 
   function handleExport(candidateId: string, format: string) {
-    const ext = format === "3d-massing" ? "json" : format;
+    const ext = format === "3d-massing" ? "glb" : format;
     api
       .download(`/exports/${candidateId}/${format}`, `design-${candidateId}.${ext}`)
       .catch(() => {});
+  }
+
+  async function handleRetry() {
+    if (!jobId || busyAction) return;
+    setBusyAction(true);
+    try {
+      await api.post(`/jobs/${jobId}/retry`, {});
+      setPollElapsed(0);
+      setResult((r) => r && { ...r, job: { ...r.job, status: "pending" } });
+      setTimeout(pollJob, 1000);
+    } catch {
+      // surfaced on next poll
+    } finally {
+      setBusyAction(false);
+    }
+  }
+
+  async function handleCancel() {
+    if (!jobId || busyAction) return;
+    setBusyAction(true);
+    try {
+      await api.post(`/jobs/${jobId}/cancel`, {});
+      pollJob();
+    } finally {
+      setBusyAction(false);
+    }
+  }
+
+  async function handleDelete() {
+    if (!jobId || !window.confirm("Delete this job and its candidates?")) return;
+    try {
+      await api.delete(`/jobs/${jobId}`);
+      window.location.href = "/dashboard";
+    } catch {
+      // stay on page
+    }
   }
 
   if (loading) {
@@ -207,6 +250,16 @@ export default function Results() {
             <p className="font-mono-tech text-xs text-muted">
               This typically takes 30-60 seconds. Page will auto-refresh.
             </p>
+            {pollElapsed > 90 && (
+              <div className="flex items-center justify-between rounded-md border border-amber-300 bg-amber-50 px-3 py-2">
+                <p className="text-xs text-amber-800">
+                  Taking longer than usual — the queue may be backed up.
+                </p>
+                <Button variant="outline" size="sm" onClick={handleCancel} disabled={busyAction}>
+                  Cancel job
+                </Button>
+              </div>
+            )}
           </CardContent>
         </Card>
       )}
@@ -266,9 +319,22 @@ export default function Results() {
             <p className="text-sm text-destructive">
               {result.job.errorMessage || "Generation failed. Please try again."}
             </p>
-            <Button variant="outline" className="mt-4" asChild>
-              <Link to="/prompt">New generation</Link>
-            </Button>
+            <div className="mt-4 flex items-center justify-center gap-2">
+              <Button variant="default" size="sm" onClick={handleRetry} disabled={busyAction}>
+                {busyAction ? "Retrying…" : "Retry generation"}
+              </Button>
+              <Button variant="outline" size="sm" asChild>
+                <Link to="/prompt">New generation</Link>
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="text-destructive hover:text-destructive"
+                onClick={handleDelete}
+              >
+                Delete job
+              </Button>
+            </div>
           </CardContent>
         </Card>
       )}
@@ -286,11 +352,15 @@ function AlternativeView({
   onRevalidate: () => Promise<void>;
 }) {
   const [revalidating, setRevalidating] = useState(false);
-  const rooms = alt.floor_plan?.rooms || [];
+  const allRooms = alt.floor_plan?.rooms || [];
+  const floorNums = [...new Set(allRooms.map((r) => r.floor ?? 1))].sort((a, b) => a - b);
+  const [activeFloor, setActiveFloor] = useState(floorNums[0] ?? 1);
+  const rooms = allRooms.filter((r) => (r.floor ?? 1) === activeFloor);
   const violations = alt.compliance?.violations || [];
   const plot = alt.floor_plan?.plot;
-  const doors = alt.floor_plan?.doors || [];
-  const windows = alt.floor_plan?.windows || [];
+  const doors = (alt.floor_plan?.doors || []).filter((d) => (d.floor ?? 1) === activeFloor);
+  const windows = (alt.floor_plan?.windows || []).filter((w) => (w.floor ?? 1) === activeFloor);
+  const repairLog = alt.floor_plan?.repairLog || [];
   const unit = alt.floor_plan?.unit || "m";
 
   // Compute SVG bounds — prefer the plot rect, fall back to room extents
@@ -327,10 +397,26 @@ function AlternativeView({
     <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
       {/* Floor plan visualization */}
       <div className="space-y-4">
+        {floorNums.length > 1 && (
+          <div className="flex gap-2">
+            {floorNums.map((f) => (
+              <Button
+                key={f}
+                variant={f === activeFloor ? "default" : "outline"}
+                size="sm"
+                onClick={() => setActiveFloor(f)}
+              >
+                {f === 1 ? "Ground floor" : `Floor ${f}`}
+              </Button>
+            ))}
+          </div>
+        )}
         <Card>
           <CardHeader>
             <div className="flex items-center justify-between">
-              <CardTitle className="text-lg">Floor Plan</CardTitle>
+              <CardTitle className="text-lg">
+                Floor Plan{floorNums.length > 1 ? ` — ${activeFloor === 1 ? "Ground" : `F${activeFloor}`}` : ""}
+              </CardTitle>
               <div className="flex items-center gap-2">
                 <Badge
                   variant={
@@ -635,6 +721,18 @@ function AlternativeView({
             </div>
           </CardHeader>
           <CardContent>
+            {repairLog.length > 0 && (
+              <div className="mb-3 space-y-1 rounded-md border border-blueprint/30 bg-blueprint-pale/40 p-2">
+                <p className="font-mono-tech text-[11px] font-semibold uppercase text-blueprint">
+                  Auto-repaired
+                </p>
+                {repairLog.map((entry, i) => (
+                  <p key={i} className="text-xs text-muted-foreground">
+                    {entry}
+                  </p>
+                ))}
+              </div>
+            )}
             {violations.length === 0 ? (
               <div className="flex items-center gap-2">
                 <CheckCircle2 className="h-4 w-4 text-green-600" />

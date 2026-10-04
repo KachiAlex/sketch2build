@@ -32,7 +32,10 @@ const geometrySchema = z.object({
       type: z.string().optional(),
       label: z.string().optional(),
       area: z.number(),
-      boundaryGeometry: z.array(z.array(z.number())).or(z.record(z.unknown())),
+      boundaryGeometry: z
+        .array(z.array(z.number()))
+        .or(z.array(z.object({ start: z.array(z.number()), end: z.array(z.number()) })))
+        .or(z.record(z.unknown())),
     })
   ),
 });

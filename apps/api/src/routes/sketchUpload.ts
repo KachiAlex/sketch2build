@@ -5,6 +5,7 @@ import { validateBody } from "../middleware/validate";
 import { getProject } from "../services/projects";
 import { uploadFile } from "../lib/storage";
 import { createGenerationJob } from "../services/jobs";
+import { assertJobQuota } from "../services/entitlements";
 import { handleError, AppError } from "../lib/errors";
 
 const router = Router();
@@ -41,6 +42,7 @@ router.post(
       }
 
       const project = await getProject(projectId, req.user!.id);
+      await assertJobQuota(req.user!.id);
       const { key } = await uploadFile(buffer, fileType, mimeByType[fileType], "sketches");
 
       const job = await createGenerationJob({

@@ -8,9 +8,13 @@ import {
   listGenerationJobsByProject,
   listRecentJobsForUser,
   finalizeJob,
+  retryJob,
+  cancelJob,
+  deleteJob,
 } from "../services/jobs";
 import { handleError } from "../lib/errors";
 import { getProject } from "../services/projects";
+import { assertJobQuota } from "../services/entitlements";
 
 const router = Router();
 
@@ -28,6 +32,7 @@ router.post(
   async (req: AuthenticatedRequest, res) => {
     try {
       await getProject(req.body.projectId, req.user!.id);
+      await assertJobQuota(req.user!.id);
       const job = await createGenerationJob(req.body);
       res.status(201).json({ job });
     } catch (err) {
@@ -113,6 +118,8 @@ function serializeJobResult(job: Awaited<ReturnType<typeof getGenerationJob>>) {
       scoreRationale: c.scoreRationale,
       floor_plan: {
         plot: (c.planExtras as Record<string, unknown> | null)?.plot,
+        floors: (c.planExtras as Record<string, unknown> | null)?.floors ?? 1,
+        repairLog: (c.planExtras as Record<string, unknown> | null)?.repairLog ?? [],
         doors: (c.planExtras as Record<string, unknown> | null)?.doors ?? [],
         windows: (c.planExtras as Record<string, unknown> | null)?.windows ?? [],
         unit: (c.planExtras as Record<string, unknown> | null)?.unit ?? "m",
@@ -121,6 +128,7 @@ function serializeJobResult(job: Awaited<ReturnType<typeof getGenerationJob>>) {
           type: r.type,
           label: r.label,
           area: r.area,
+          floor: r.floor,
           boundary: r.boundaryGeometry,
         })),
       },
@@ -161,6 +169,55 @@ router.post(
       await getProject(job.projectId, req.user!.id);
       const finalized = await finalizeJob(req.params.id);
       res.json(finalized);
+    } catch (err) {
+      const { statusCode, body } = handleError(err);
+      res.status(statusCode).json(body);
+    }
+  }
+);
+
+router.post(
+  "/:id/retry",
+  authenticate,
+  async (req: AuthenticatedRequest, res) => {
+    try {
+      const job = await getGenerationJob(req.params.id);
+      await getProject(job.projectId, req.user!.id);
+      await assertJobQuota(req.user!.id);
+      const retried = await retryJob(req.params.id);
+      res.json({ job: retried });
+    } catch (err) {
+      const { statusCode, body } = handleError(err);
+      res.status(statusCode).json(body);
+    }
+  }
+);
+
+router.post(
+  "/:id/cancel",
+  authenticate,
+  async (req: AuthenticatedRequest, res) => {
+    try {
+      const job = await getGenerationJob(req.params.id);
+      await getProject(job.projectId, req.user!.id);
+      const cancelled = await cancelJob(req.params.id);
+      res.json({ job: cancelled });
+    } catch (err) {
+      const { statusCode, body } = handleError(err);
+      res.status(statusCode).json(body);
+    }
+  }
+);
+
+router.delete(
+  "/:id",
+  authenticate,
+  async (req: AuthenticatedRequest, res) => {
+    try {
+      const job = await getGenerationJob(req.params.id);
+      await getProject(job.projectId, req.user!.id);
+      await deleteJob(req.params.id);
+      res.status(204).send();
     } catch (err) {
       const { statusCode, body } = handleError(err);
       res.status(statusCode).json(body);

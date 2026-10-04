@@ -10,6 +10,7 @@ import {
   deleteRule,
 } from "../services/compliance";
 import { handleError } from "../lib/errors";
+import { prisma } from "../lib/prisma";
 
 const router = Router();
 
@@ -39,6 +40,20 @@ router.post(
     }
   }
 );
+
+router.get("/jurisdictions", authenticate, async (_req: AuthenticatedRequest, res) => {
+  try {
+    const dbJurisdictions = await prisma.complianceRule.findMany({
+      select: { jurisdiction: true },
+      distinct: ["jurisdiction"],
+    });
+    const supported = new Set(["Nigeria", ...dbJurisdictions.map((d) => d.jurisdiction)]);
+    res.json({ jurisdictions: [...supported].sort() });
+  } catch (err) {
+    const { statusCode, body } = handleError(err);
+    res.status(statusCode).json(body);
+  }
+});
 
 router.get(
   "/rules",

@@ -32,6 +32,7 @@ export async function generateExport(candidateId: string, format: string) {
       type: room.type,
       label: room.label,
       area: room.area,
+      floor: room.floor,
       boundaryGeometry: room.boundaryGeometry,
     })),
   };

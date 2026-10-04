@@ -15,9 +15,12 @@ model User {
   role          String // architect | drafter | developer | homeowner | admin
   status        String        @default("active") // active | suspended
   organization  String?
+  organizationId String?
+  org           Organization? @relation(fields: [organizationId], references: [id])
   passwordHash  String
   projects      Project[]
   subscription  Subscription?
+  resetTokens   PasswordResetToken[]
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
 }
@@ -60,6 +63,7 @@ model GenerationJob {
   sourceType       String // sketch | prompt
   status           String      @default("queued") // queued | processing | candidates_ready | under_review | finalized | failed
   inputReference   String? // object storage key
+  payload          Json?   // original generation input, retained for retries
   errorMessage     String?
   candidates       Candidate[]
   reviewedBy       String?
@@ -91,8 +95,46 @@ model Room {
   type              String // living | bedroom | kitchen | bathroom | dining | corridor | entrance | store | other
   label             String?
   area              Float
+  floor             Int       @default(1)
   boundaryGeometry  Json // array of [x, y] points
   adjacentRoomIds   String[]
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  actorId    String
+  action     String // role_change | status_change | plan_change | user_delete | org_invite
+  targetType String // user | organization | subscription
+  targetId   String
+  metadata   Json?
+  createdAt  DateTime @default(now())
+}
+
+model PasswordResetToken {
+  id        String    @id @default(uuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token     String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+}
+
+model ErrorLog {
+  id         String   @id @default(uuid())
+  method     String
+  path       String
+  statusCode Int
+  message    String
+  createdAt  DateTime @default(now())
+}
+
+model Organization {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  ownerId   String
+  members   User[]
+  createdAt DateTime @default(now())
 }
 
 model ComplianceRule {

@@ -16,6 +16,7 @@ export async function createGenerationJob(input: JobInput) {
       sourceType: input.sourceType,
       status: "queued",
       inputReference: input.inputReference,
+      payload: (input.payload ?? null) as never,
     },
   });
 
@@ -78,6 +79,7 @@ export interface CandidateInput {
     type: string;
     label?: string;
     area: number;
+    floor?: number;
     boundaryGeometry: unknown;
     adjacentRoomIds?: string[];
   }>;
@@ -98,6 +100,7 @@ export async function persistCandidates(jobId: string, candidates: CandidateInpu
             type: room.type,
             label: room.label,
             area: room.area,
+            floor: room.floor ?? 1,
             boundaryGeometry: room.boundaryGeometry as never,
             adjacentRoomIds: room.adjacentRoomIds ?? [],
           })),
@@ -114,6 +117,58 @@ export async function finalizeJob(jobId: string) {
     where: { id: jobId },
     data: { status: "finalized" },
   });
+}
+
+export async function retryJob(jobId: string) {
+  const job = await prisma.generationJob.findUnique({ where: { id: jobId } });
+  if (!job) {
+    throw new AppError(404, "Job not found", "JOB_NOT_FOUND");
+  }
+  if (job.status !== "failed") {
+    throw new AppError(400, "Only failed jobs can be retried", "JOB_NOT_RETRYABLE");
+  }
+  await prisma.generationJob.update({
+    where: { id: jobId },
+    data: { status: "queued", errorMessage: null },
+  });
+  await generationQueue.add("generate-layout", {
+    jobId: job.id,
+    projectId: job.projectId,
+    sourceType: job.sourceType,
+    inputReference: job.inputReference,
+    payload: job.payload ?? null,
+  });
+  return prisma.generationJob.findUnique({ where: { id: jobId } });
+}
+
+export async function cancelJob(jobId: string) {
+  const job = await prisma.generationJob.findUnique({ where: { id: jobId } });
+  if (!job) {
+    throw new AppError(404, "Job not found", "JOB_NOT_FOUND");
+  }
+  if (job.status !== "queued" && job.status !== "processing") {
+    throw new AppError(400, "Only queued or processing jobs can be cancelled", "JOB_NOT_CANCELLABLE");
+  }
+  return prisma.generationJob.update({
+    where: { id: jobId },
+    data: { status: "failed", errorMessage: "Cancelled by user" },
+  });
+}
+
+export async function deleteJob(jobId: string) {
+  const job = await prisma.generationJob.findUnique({ where: { id: jobId } });
+  if (!job) {
+    throw new AppError(404, "Job not found", "JOB_NOT_FOUND");
+  }
+  if (job.status === "queued" || job.status === "processing") {
+    throw new AppError(400, "Cannot delete a job that is still running — cancel it first", "JOB_RUNNING");
+  }
+  const candidates = await prisma.candidate.findMany({ where: { jobId }, select: { id: true } });
+  const candidateIds = candidates.map((c) => c.id);
+  await prisma.complianceViolation.deleteMany({ where: { candidateId: { in: candidateIds } } });
+  await prisma.room.deleteMany({ where: { candidateId: { in: candidateIds } } });
+  await prisma.candidate.deleteMany({ where: { jobId } });
+  await prisma.generationJob.delete({ where: { id: jobId } });
 }
 
 export async function getCandidateById(candidateId: string) {
