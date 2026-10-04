@@ -59,7 +59,7 @@ model Project {
 model GenerationJob {
   id               String      @id @default(uuid())
   projectId        String
-  project          Project     @relation(fields: [projectId], references: [id])
+  project          Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
   sourceType       String // sketch | prompt
   status           String      @default("queued") // queued | processing | candidates_ready | under_review | finalized | failed
   inputReference   String? // object storage key
@@ -76,7 +76,7 @@ model GenerationJob {
 model Candidate {
   id                  String       @id @default(uuid())
   jobId               String
-  job                 GenerationJob @relation(fields: [jobId], references: [id])
+  job                 GenerationJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
   rank                Int          @default(0)
   score               Float?
   scoreRationale      Json?
@@ -91,7 +91,7 @@ model Candidate {
 model Room {
   id                String    @id @default(uuid())
   candidateId       String
-  candidate         Candidate @relation(fields: [candidateId], references: [id])
+  candidate         Candidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
   type              String // living | bedroom | kitchen | bathroom | dining | corridor | entrance | store | other
   label             String?
   area              Float
@@ -150,7 +150,7 @@ model ComplianceRule {
 model ComplianceViolation {
   id          String    @id @default(uuid())
   candidateId String
-  candidate   Candidate @relation(fields: [candidateId], references: [id])
+  candidate   Candidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
   ruleId      String
   message     String
   location    String?
@@ -161,7 +161,7 @@ model ComplianceViolation {
 model EditHistory {
   id                      String   @id @default(uuid())
   projectId               String
-  project                 Project  @relation(fields: [projectId], references: [id])
+  project                 Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
   editorId                String
   changeDescription       String
   snapshot                Json?    // full previous candidate geometry state
@@ -172,7 +172,7 @@ model EditHistory {
 model ExportRecord {
   id             String   @id @default(uuid())
   projectId      String
-  project        Project  @relation(fields: [projectId], references: [id])
+  project        Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
   format         String // DXF | IFC | PDF | PNG
   fileReference  String
   exportedAt     DateTime @default(now())
