@@ -32,6 +32,10 @@ export async function authenticate(
       res.status(401).json({ error: "User not found" });
       return;
     }
+    if (user.status === "suspended") {
+      res.status(403).json({ error: "Account suspended" });
+      return;
+    }
     req.user = { id: user.id, email: user.email, name: user.name, role: user.role as UserRole };
     next();
   } catch {

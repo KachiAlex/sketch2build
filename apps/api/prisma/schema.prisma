@@ -9,15 +9,29 @@ datasource db {
 }
 
 model User {
-  id            String    @id @default(uuid())
-  email         String    @unique
+  id            String        @id @default(uuid())
+  email         String        @unique
   name          String
   role          String // architect | drafter | developer | homeowner | admin
+  status        String        @default("active") // active | suspended
   organization  String?
   passwordHash  String
   projects      Project[]
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  subscription  Subscription?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+}
+
+model Subscription {
+  id        String    @id @default(uuid())
+  userId    String    @unique
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plan      String    @default("free") // free | pro | studio
+  status    String    @default("active") // active | trialing | past_due | canceled
+  seats     Int       @default(1)
+  renewsAt  DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
 }
 
 model Project {

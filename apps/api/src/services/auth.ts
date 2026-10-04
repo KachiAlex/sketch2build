@@ -20,12 +20,13 @@ export interface LoginInput {
   password: string;
 }
 
-export function sanitizeUser(user: { id: string; email: string; name: string; role: string; organization?: string | null }) {
+export function sanitizeUser(user: { id: string; email: string; name: string; role: string; status?: string; organization?: string | null }) {
   return {
     id: user.id,
     email: user.email,
     name: user.name,
     role: user.role,
+    status: user.status ?? "active",
     organization: user.organization ?? undefined,
   };
 }
@@ -66,6 +67,9 @@ export async function loginUser(input: LoginInput) {
   if (!valid) {
     throw new AppError(401, "Invalid email or password", "INVALID_CREDENTIALS");
   }
+  if (user.status === "suspended") {
+    throw new AppError(403, "Account suspended", "ACCOUNT_SUSPENDED");
+  }
 
   const token = jwt.sign(
     { userId: user.id, email: user.email, role: user.role },
@@ -74,6 +78,19 @@ export async function loginUser(input: LoginInput) {
   );
 
   return { user: sanitizeUser(user), token };
+}
+
+export async function changePassword(userId: string, currentPassword: string, newPassword: string) {
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user) {
+    throw new AppError(404, "User not found", "USER_NOT_FOUND");
+  }
+  const valid = await bcrypt.compare(currentPassword, user.passwordHash);
+  if (!valid) {
+    throw new AppError(400, "Current password is incorrect", "INVALID_PASSWORD");
+  }
+  const passwordHash = await bcrypt.hash(newPassword, SALT_ROUNDS);
+  await prisma.user.update({ where: { id: userId }, data: { passwordHash } });
 }
 
 export async function getUserById(id: string) {

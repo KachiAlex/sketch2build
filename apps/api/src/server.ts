@@ -12,6 +12,7 @@ import regionalRoutes from "./routes/regional";
 import complianceRoutes from "./routes/compliance";
 import reviewRoutes from "./routes/review";
 import exportRoutes from "./routes/exports";
+import adminRoutes from "./routes/admin";
 
 export function createServer() {
   const app = express();
@@ -45,6 +46,7 @@ export function createServer() {
   app.use("/api/compliance", complianceRoutes);
   app.use("/api/review", reviewRoutes);
   app.use("/api/exports", exportRoutes);
+  app.use("/api/admin", adminRoutes);
 
   app.use((_req: Request, res: Response) => {
     res.status(404).json({ error: "Not found" });

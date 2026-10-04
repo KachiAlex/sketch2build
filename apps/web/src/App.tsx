@@ -11,7 +11,9 @@ import Register from "./pages/Register";
 import Sketch from "./pages/Sketch";
 import Prompt from "./pages/Prompt";
 import Results from "./pages/Results";
+import Admin from "./pages/Admin";
 import AdminRules from "./pages/AdminRules";
+import Settings from "./pages/Settings";
 import Review from "./pages/Review";
 import NotFound from "./pages/NotFound";
 
@@ -73,6 +75,22 @@ function AppLayout() {
             element={
               <PrivateRoute>
                 <Results />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/admin"
+            element={
+              <PrivateRoute>
+                <Admin />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/settings"
+            element={
+              <PrivateRoute>
+                <Settings />
               </PrivateRoute>
             }
           />

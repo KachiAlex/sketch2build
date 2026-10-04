@@ -60,8 +60,9 @@ export function AppHeader() {
   ];
 
   if (user?.role === "admin") {
-    navLinks.push({ label: "Rules", href: "/admin/rules" });
+    navLinks.push({ label: "Admin", href: "/admin" }, { label: "Rules", href: "/admin/rules" });
   }
+  navLinks.push({ label: "Settings", href: "/settings" });
 
   return (
     <header className="border-b-[1.5px] border-vellum-line bg-vellum">

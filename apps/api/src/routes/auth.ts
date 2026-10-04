@@ -3,7 +3,7 @@ import { z } from "zod";
 import { validateBody } from "../middleware/validate";
 import { authenticate, AuthenticatedRequest } from "../middleware/auth";
 import { authLimiter } from "../middleware/rateLimit";
-import { registerUser, loginUser, getUserById } from "../services/auth";
+import { registerUser, loginUser, getUserById, changePassword } from "../services/auth";
 import { handleError } from "../lib/errors";
 
 const router = Router();
@@ -19,6 +19,11 @@ const registerSchema = z.object({
 const loginSchema = z.object({
   email: z.string().email(),
   password: z.string().min(1),
+});
+
+const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1),
+  newPassword: z.string().min(8),
 });
 
 router.post(
@@ -44,6 +49,21 @@ router.post(
     try {
       const result = await loginUser(req.body);
       res.json(result);
+    } catch (err) {
+      const { statusCode, body } = handleError(err);
+      res.status(statusCode).json(body);
+    }
+  }
+);
+
+router.post(
+  "/change-password",
+  authenticate,
+  validateBody(changePasswordSchema),
+  async (req: AuthenticatedRequest, res) => {
+    try {
+      await changePassword(req.user!.id, req.body.currentPassword, req.body.newPassword);
+      res.json({ ok: true });
     } catch (err) {
       const { statusCode, body } = handleError(err);
       res.status(statusCode).json(body);
