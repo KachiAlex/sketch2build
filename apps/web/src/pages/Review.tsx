@@ -329,22 +329,19 @@ export default function Review() {
           <CardContent>
             <div className="grid grid-cols-2 gap-2">
               <Button variant="outline" onClick={() => handleExport("dxf", `layout-${candidateId}.dxf`)}>
-                DXF (2D)
-              </Button>
-              <Button variant="outline" onClick={() => handleExport("dxf3d", `layout-${candidateId}-3d.dxf`)}>
-                DXF (3D)
+                DXF
               </Button>
               <Button variant="outline" onClick={() => handleExport("ifc", `layout-${candidateId}.ifc`)}>
                 IFC (BIM)
               </Button>
-              <Button variant="outline" onClick={() => handleExport("glb", `layout-${candidateId}.glb`)}>
-                GLB (3D)
+              <Button variant="outline" onClick={() => handleExport("pdf", `layout-${candidateId}.pdf`)}>
+                PDF
               </Button>
               <Button variant="outline" onClick={() => handleExport("png", `layout-${candidateId}.png`)}>
                 PNG
               </Button>
-              <Button variant="outline" onClick={() => handleExport("preview3d", `preview-${candidateId}.png`)}>
-                3D Preview
+              <Button variant="outline" className="col-span-2" onClick={() => handleExport("3d-massing", `massing-${candidateId}.json`)}>
+                3D Massing (JSON)
               </Button>
             </div>
           </CardContent>

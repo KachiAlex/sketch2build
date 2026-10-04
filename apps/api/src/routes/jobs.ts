@@ -47,7 +47,18 @@ router.get(
         100
       );
       const jobs = await listRecentJobsForUser(req.user!.id, limit);
-      res.json({ jobs });
+      res.json({
+        jobs: jobs.map((j) => ({
+          id: j.id,
+          status: JOB_STATUS_MAP[j.status] ?? j.status,
+          rawStatus: j.status,
+          inputType: j.sourceType,
+          projectId: j.projectId,
+          project: j.project,
+          candidateCount: j.candidates.length,
+          createdAt: j.createdAt,
+        })),
+      });
     } catch (err) {
       const { statusCode, body } = handleError(err);
       res.status(statusCode).json(body);

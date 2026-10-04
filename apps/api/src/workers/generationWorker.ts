@@ -1,6 +1,7 @@
 import { Job } from "bullmq";
 import { createGenerationWorker } from "../lib/queue";
 import { updateJobStatus, persistCandidates } from "../services/jobs";
+import { validateCandidate } from "../services/compliance";
 
 export interface GenerationJobData {
   jobId: string;
@@ -65,7 +66,16 @@ async function processGenerationJob(job: Job<GenerationJobData>) {
 
     const candidates = normalizeCandidates(sourceType, result);
     if (candidates.length > 0) {
-      await persistCandidates(jobId, candidates);
+      const persisted = await persistCandidates(jobId, candidates);
+      // Best-effort compliance validation — a validator failure must not fail the job.
+      for (const candidate of persisted) {
+        try {
+          await validateCandidate(candidate.id);
+        } catch (validationErr) {
+          // eslint-disable-next-line no-console
+          console.error(`Compliance validation failed for candidate ${candidate.id}:`, validationErr);
+        }
+      }
     }
 
     await updateJobStatus(jobId, "candidates_ready");

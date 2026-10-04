@@ -11,7 +11,6 @@ const roles = [
   { value: "drafter", label: "Drafter" },
   { value: "architect", label: "Architect" },
   { value: "developer", label: "Developer" },
-  { value: "admin", label: "Admin" },
 ];
 
 export default function Register() {

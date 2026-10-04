@@ -84,8 +84,9 @@ export interface CandidateInput {
 }
 
 export async function persistCandidates(jobId: string, candidates: CandidateInput[]) {
+  const persisted = [];
   for (const candidate of candidates) {
-    await prisma.candidate.create({
+    const created = await prisma.candidate.create({
       data: {
         jobId,
         rank: candidate.rank,
@@ -103,7 +104,9 @@ export async function persistCandidates(jobId: string, candidates: CandidateInpu
         },
       },
     });
+    persisted.push(created);
   }
+  return persisted;
 }
 
 export async function finalizeJob(jobId: string) {

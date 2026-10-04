@@ -10,9 +10,20 @@ import {
 } from "../services/jobs";
 import { validateCandidate } from "../services/compliance";
 import { prisma } from "../lib/prisma";
-import { handleError } from "../lib/errors";
+import { handleError, AppError } from "../lib/errors";
 
 const router = Router();
+
+async function assertCandidateAccess(candidateId: string, userId: string, role: string) {
+  const candidate = await getCandidateById(candidateId);
+  if (!candidate) {
+    throw new AppError(404, "Candidate not found", "CANDIDATE_NOT_FOUND");
+  }
+  if (candidate.job.project.ownerId !== userId && role !== "admin") {
+    throw new AppError(403, "Forbidden", "FORBIDDEN");
+  }
+  return candidate;
+}
 
 const geometrySchema = z.object({
   rooms: z.array(
@@ -31,11 +42,11 @@ router.get(
   authenticate,
   async (req: AuthenticatedRequest, res) => {
     try {
-      const candidate = await getCandidateById(req.params.candidateId);
-      if (!candidate) {
-        res.status(404).json({ error: "Candidate not found" });
-        return;
-      }
+      const candidate = await assertCandidateAccess(
+        req.params.candidateId,
+        req.user!.id,
+        req.user!.role
+      );
       res.json(candidate);
     } catch (err) {
       const { statusCode, body } = handleError(err);
@@ -51,6 +62,7 @@ router.patch(
   validateBody(geometrySchema),
   async (req: AuthenticatedRequest, res) => {
     try {
+      await assertCandidateAccess(req.params.candidateId, req.user!.id, req.user!.role);
       await updateCandidateGeometry(
         req.params.candidateId,
         req.body.rooms,
@@ -74,6 +86,7 @@ router.post(
   validateBody(z.object({ historyId: z.string().uuid() })),
   async (req: AuthenticatedRequest, res) => {
     try {
+      await assertCandidateAccess(req.params.candidateId, req.user!.id, req.user!.role);
       await revertCandidateToHistory(
         req.params.candidateId,
         req.body.historyId,
@@ -94,6 +107,7 @@ router.get(
   authenticate,
   async (req: AuthenticatedRequest, res) => {
     try {
+      await assertCandidateAccess(req.params.candidateId, req.user!.id, req.user!.role);
       const history = await prisma.editHistory.findMany({
         where: { previousStateReference: req.params.candidateId },
         orderBy: { timestamp: "desc" },
@@ -112,6 +126,16 @@ router.post(
   requireRole("architect", "admin"),
   async (req: AuthenticatedRequest, res) => {
     try {
+      const jobForAccess = await prisma.generationJob.findUnique({
+        where: { id: req.params.jobId },
+        include: { project: true },
+      });
+      if (!jobForAccess) {
+        throw new AppError(404, "Job not found", "JOB_NOT_FOUND");
+      }
+      if (jobForAccess.project.ownerId !== req.user!.id && req.user!.role !== "admin") {
+        throw new AppError(403, "Forbidden", "FORBIDDEN");
+      }
       const job = await finalizeJobWithReview(req.params.jobId, req.user!.name);
       res.json(job);
     } catch (err) {

@@ -237,6 +237,10 @@ export default function Results() {
                 <AlternativeView
                   alt={alt}
                   onExport={(fmt) => handleExport(alt.candidateId, fmt)}
+                  onRevalidate={async () => {
+                    await api.post(`/compliance/validate`, { candidateId: alt.candidateId });
+                    pollJob();
+                  }}
                 />
               </TabsContent>
             ))}
@@ -275,10 +279,13 @@ export default function Results() {
 function AlternativeView({
   alt,
   onExport,
+  onRevalidate,
 }: {
   alt: Alternative;
   onExport: (format: string) => void;
+  onRevalidate: () => Promise<void>;
 }) {
+  const [revalidating, setRevalidating] = useState(false);
   const rooms = alt.floor_plan?.rooms || [];
   const violations = alt.compliance?.violations || [];
   const plot = alt.floor_plan?.plot;
@@ -608,10 +615,24 @@ function AlternativeView({
         {/* Compliance */}
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-base">
-              <AlertTriangle className="h-4 w-4 text-amber-500" />
-              Compliance
-            </CardTitle>
+            <div className="flex items-center justify-between">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <AlertTriangle className="h-4 w-4 text-amber-500" />
+                Compliance
+              </CardTitle>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 px-2 text-xs"
+                onClick={() => {
+                  setRevalidating(true);
+                  onRevalidate().finally(() => setRevalidating(false));
+                }}
+                disabled={revalidating}
+              >
+                {revalidating ? "Checking…" : "Re-check"}
+              </Button>
+            </div>
           </CardHeader>
           <CardContent>
             {violations.length === 0 ? (
@@ -687,6 +708,9 @@ function AlternativeView({
               </Button>
               <Button variant="outline" size="sm" onClick={() => onExport("png")}>
                 PNG
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => onExport("pdf")}>
+                PDF
               </Button>
             </div>
             <Button
