@@ -35,12 +35,25 @@ async function callSketchDigitization(jobData: GenerationJobData) {
   return response.json();
 }
 
-async function callPromptGeneration(jobData: GenerationJobData, jurisdiction?: string | null) {
+async function callPromptGeneration(
+  jobData: GenerationJobData,
+  jurisdiction?: string | null,
+  plotDimensions?: { width?: number; depth?: number; unit?: string } | null
+) {
+  const payload = (jobData.payload || {}) as Record<string, unknown>;
+  // Ensure the program carries the project's plot dimensions — clients may
+  // send plotWidth/plotDepth, a site object, or nothing at all.
+  const site = (payload.site as Record<string, unknown>) || {};
+  if (plotDimensions?.width && !site.width) site.width = plotDimensions.width;
+  if (plotDimensions?.depth && !site.depth) site.depth = plotDimensions.depth;
+  if (plotDimensions?.unit && !site.unit) site.unit = plotDimensions.unit;
+  const program = { ...payload, site };
+
   const response = await fetch(`${AI_SERVICE_URL}/prompt/generate-from-program`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      program: jobData.payload,
+      program,
       projectId: jobData.projectId,
       jobId: jobData.jobId,
       jurisdiction,
@@ -75,14 +88,21 @@ async function processGenerationJob(job: Job<GenerationJobData>) {
   try {
     const project = await prisma.project.findUnique({
       where: { id: job.data.projectId },
-      select: { jurisdiction: true },
+      select: { jurisdiction: true, plotWidth: true, plotDepth: true, plotUnit: true },
     });
+    const plotDimensions = project
+      ? {
+          width: project.plotWidth ?? undefined,
+          depth: project.plotDepth ?? undefined,
+          unit: project.plotUnit ?? undefined,
+        }
+      : null;
 
     let result: Record<string, unknown> = {};
     if (sourceType === "sketch") {
       result = await callSketchDigitization(job.data);
     } else if (sourceType === "prompt") {
-      result = await callPromptGeneration(job.data, project?.jurisdiction);
+      result = await callPromptGeneration(job.data, project?.jurisdiction, plotDimensions);
     }
 
     // The user may have cancelled while the AI service was generating.

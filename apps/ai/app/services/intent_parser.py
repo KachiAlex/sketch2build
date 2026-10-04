@@ -149,8 +149,8 @@ def parse_brief(brief: dict[str, Any]) -> dict[str, Any]:
     """
     site = brief.get("site") or {}
     unit = site.get("unit") or brief.get("unit", "m")
-    width = site.get("width") or brief.get("plot_width", 10.0)
-    depth = site.get("depth") or brief.get("plot_depth", 10.0)
+    width = site.get("width") or brief.get("plot_width") or brief.get("plotWidth") or 10.0
+    depth = site.get("depth") or brief.get("plot_depth") or brief.get("plotDepth") or 10.0
 
     try:
         plot_area = max(1.0, float(width) * float(depth))
