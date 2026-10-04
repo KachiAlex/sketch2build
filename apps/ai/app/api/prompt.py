@@ -3,6 +3,7 @@ from pydantic import BaseModel, Field
 from typing import Optional, Any
 from app.services.intent_parser import parse_brief
 from app.services.layout_generator import generate_candidates
+from app.compliance.validator import build_ruleset
 
 router = APIRouter()
 
@@ -20,6 +21,17 @@ class GenerateFromProgramRequest(BaseModel):
     program: dict[str, Any] = Field(..., description="Structured design program from the intent parser")
     projectId: str
     jobId: str
+    jurisdiction: Optional[str] = None
+
+
+def _apply_setbacks(program: dict, jurisdiction: Optional[str]) -> dict:
+    """Inset the layout by the jurisdiction's setback envelope when the
+    program doesn't already carry explicit setbacks."""
+    site = program.setdefault("site", {})
+    if jurisdiction and not site.get("setbacks"):
+        ruleset = build_ruleset(jurisdiction, [])
+        site["setbacks"] = ruleset["setbacks"]
+    return program
 
 
 def _validate_dimensions(brief: DesignBrief) -> tuple[dict[str, Any], Optional[str]]:
@@ -57,7 +69,7 @@ async def parse_and_generate(brief: DesignBrief) -> dict:
 async def generate_from_program(req: GenerateFromProgramRequest) -> dict:
     """Internal endpoint invoked by the orchestration worker."""
     program = req.program if req.program.get("rooms") else parse_brief(req.program)
-    candidates = generate_candidates(program)
+    candidates = generate_candidates(_apply_setbacks(program, req.jurisdiction))
     return {
         "status": "completed",
         "jobId": req.jobId,

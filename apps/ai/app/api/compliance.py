@@ -4,7 +4,7 @@ from typing import Any, Optional
 from app.compliance.validator import validate_layout, list_rules, build_ruleset
 from app.compliance.repair import repair_layout
 from app.compliance.geometry import Rect
-from app.services.layout_generator import _openings
+from app.services.layout_generator import _openings, _ensure_connectivity
 
 router = APIRouter()
 
@@ -38,7 +38,10 @@ async def validate_candidate(req: ValidateRequest) -> dict[str, Any]:
                     bx1 = max(p["_rect"][2] for p in placed)
                     by1 = max(p["_rect"][3] for p in placed)
                     plot = {"width": round(bx1 - bx0, 2), "depth": round(by1 - by0, 2)}
-                    doors, windows = _openings(placed, plot)
+                    # Repairs drift rooms off exact shared edges — use a loose
+                    # tolerance so near-adjacent rooms still get openings.
+                    doors, windows = _openings(placed, plot, edge_tol=0.8)
+                    _ensure_connectivity(placed, doors, edge_tol=0.8)
                     repaired_layout["plot"] = plot
                     repaired_layout["doors"] = doors
                     repaired_layout["windows"] = windows

@@ -140,20 +140,18 @@ def validate_layout(
             max(r.y_max for r in room_rects),
         )
         setback = ruleset["setbacks"]
-        checked_edges: set[str] = set()
-        for edge, distance in [("front", setback.get("front")), ("side", setback.get("side")), ("rear", setback.get("rear"))]:
-            if distance is None or edge in checked_edges:
-                continue
-            checked_edges.add(edge)
-            if not check_setback(site, [[building_rect.x_min, building_rect.y_min], [building_rect.x_max, building_rect.y_min], [building_rect.x_max, building_rect.y_max], [building_rect.x_min, building_rect.y_max]], distance):
-                if building_rect.x_min < site_rect.x_min + distance:
-                    violations.append(_setback_violation(edge, "left", distance))
-                if building_rect.x_max > site_rect.x_max - distance:
-                    violations.append(_setback_violation(edge, "right", distance))
-                if building_rect.y_min < site_rect.y_min + distance:
-                    violations.append(_setback_violation(edge, "bottom", distance))
-                if building_rect.y_max > site_rect.y_max - distance:
-                    violations.append(_setback_violation(edge, "top", distance))
+        # Edge semantics: front = entrance edge (bottom, y_min); side = both
+        # x edges; rear = top edge (y_max). Each edge uses its own distance.
+        edge_checks = [
+            ("front", "bottom", building_rect.y_min < site_rect.y_min + float(setback.get("front") or 0)),
+            ("rear", "top", building_rect.y_max > site_rect.y_max - float(setback.get("rear") or 0)),
+            ("side", "left", building_rect.x_min < site_rect.x_min + float(setback.get("side") or 0)),
+            ("side", "right", building_rect.x_max > site_rect.x_max - float(setback.get("side") or 0)),
+        ]
+        for edge, side, fails in edge_checks:
+            distance = float(setback.get(edge) or 0)
+            if distance and fails:
+                violations.append(_setback_violation(edge, side, distance))
 
         max_coverage = ruleset.get("plot_coverage")
         site_area = polygon_area(site)

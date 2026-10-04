@@ -35,7 +35,7 @@ async function callSketchDigitization(jobData: GenerationJobData) {
   return response.json();
 }
 
-async function callPromptGeneration(jobData: GenerationJobData) {
+async function callPromptGeneration(jobData: GenerationJobData, jurisdiction?: string | null) {
   const response = await fetch(`${AI_SERVICE_URL}/prompt/generate-from-program`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -43,6 +43,7 @@ async function callPromptGeneration(jobData: GenerationJobData) {
       program: jobData.payload,
       projectId: jobData.projectId,
       jobId: jobData.jobId,
+      jurisdiction,
     }),
   });
 
@@ -72,11 +73,16 @@ async function processGenerationJob(job: Job<GenerationJobData>) {
   await updateJobStatus(jobId, "processing");
 
   try {
+    const project = await prisma.project.findUnique({
+      where: { id: job.data.projectId },
+      select: { jurisdiction: true },
+    });
+
     let result: Record<string, unknown> = {};
     if (sourceType === "sketch") {
       result = await callSketchDigitization(job.data);
     } else if (sourceType === "prompt") {
-      result = await callPromptGeneration(job.data);
+      result = await callPromptGeneration(job.data, project?.jurisdiction);
     }
 
     // The user may have cancelled while the AI service was generating.

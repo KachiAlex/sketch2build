@@ -31,7 +31,27 @@ DOOR_DENY = {
     ("balcony", "bathroom"),
 }
 
-WALL_MARGIN = 0.6  # structural/setback margin kept free around the plot edge
+WALL_MARGIN = 0.6  # structural margin kept free inside the build envelope
+
+
+def _layout_margins(q: int, setbacks: dict) -> tuple[float, float, float, float]:
+    """Map site setbacks into layout-space margins (left, bottom, right, top).
+
+    The generator always packs with the public/entrance strip at layout y=0,
+    then rotates by `q` quarter-turns. So the "front" setback must land on
+    whichever layout edge becomes the site's bottom edge after rotation.
+    """
+    f = float(setbacks.get("front") or 0)
+    s = float(setbacks.get("side") or 0)
+    r = float(setbacks.get("rear") or 0)
+    base = {
+        0: (s, f, s, r),
+        1: (f, s, r, s),
+        2: (s, r, s, f),
+        3: (r, s, f, s),
+    }[q % 4]
+    m = WALL_MARGIN
+    return (base[0] + m, base[1] + m, base[2] + m, base[3] + m)
 
 
 def _rect(x: float, y: float, w: float, h: float) -> list[list[float]]:
@@ -88,14 +108,55 @@ def _zone_groups(rooms: list[dict]) -> tuple[list[dict], list[dict], list[dict]]
     return public, private, service
 
 
-def _layout_rooms(rooms: list[dict], width: float, depth: float, seed: int) -> tuple[list[dict], dict]:
+_MIN_SIDE = 2.4  # narrowest acceptable room dimension (m)
+
+
+def _pack_block(
+    rooms: list[dict], x: float, y: float, w: float, h: float, depth: int = 0
+) -> list[dict]:
+    """Pack rooms into a rect, splitting into rows/columns when a single
+    strip would leave the smallest room narrower than _MIN_SIDE."""
+    if not rooms or w <= 0 or h <= 0:
+        return []
+    if depth < 3 and len(rooms) >= 2:
+        horiz = w >= h
+        span, cross = (w, h) if horiz else (h, w)
+        areas = [max(1, r.get("min_area", 9)) for r in rooms]
+        narrowest = span * min(areas) / sum(areas)
+        if narrowest < _MIN_SIDE and cross >= 2 * _MIN_SIDE:
+            groups: list[list[dict]] = [[], []]
+            acc = [0.0, 0.0]
+            for room in sorted(rooms, key=lambda r: -r.get("min_area", 9)):
+                k = 0 if acc[0] <= acc[1] else 1
+                groups[k].append(room)
+                acc[k] += room.get("min_area", 9)
+            half = cross / 2
+            if horiz:
+                return _pack_block(groups[0], x, y, w, half, depth + 1) + _pack_block(
+                    groups[1], x, y + half, w, h - half, depth + 1
+                )
+            return _pack_block(groups[0], x, y, half, h, depth + 1) + _pack_block(
+                groups[1], x + half, y, w - half, h, depth + 1
+            )
+    return _pack_strip(rooms, x, y, w, h)
+
+
+def _layout_rooms(
+    rooms: list[dict],
+    width: float,
+    depth: float,
+    seed: int,
+    margins: tuple[float, float, float, float] | None = None,
+) -> tuple[list[dict], dict]:
     """Partition the usable plot into room rectangles.
 
     Public zone gets a strip at the entrance edge (y=0); the remaining depth is
     split horizontally between a private block and a service column.
+    `margins` is (left, bottom, right, top) — setbacks + wall margin.
     """
-    x0, y0 = WALL_MARGIN, WALL_MARGIN
-    w, d = max(1.0, width - 2 * WALL_MARGIN), max(1.0, depth - 2 * WALL_MARGIN)
+    ml, mb, mr, mt = margins or (WALL_MARGIN,) * 4
+    x0, y0 = ml, mb
+    w, d = max(1.0, width - ml - mr), max(1.0, depth - mb - mt)
 
     rng = random.Random(seed)
     ordered = sorted(rooms, key=lambda r: (ZONE.get(r.get("type", ""), 4), -r.get("min_area", 9.0)))
@@ -122,7 +183,7 @@ def _layout_rooms(rooms: list[dict], width: float, depth: float, seed: int) -> t
     if public:
         pub_area = sum(r["min_area"] for r in public)
         pub_h = min(d * 0.55, max(d * 0.22, d * pub_area / usable_area))
-        placed += _pack_strip(public, x0, y0, w, pub_h)
+        placed += _pack_block(public, x0, y0, w, pub_h)
         rest_y, rest_h = y0 + pub_h, d - pub_h
         rest_rooms = private + service
     else:
@@ -134,23 +195,28 @@ def _layout_rooms(rooms: list[dict], width: float, depth: float, seed: int) -> t
             svc_area = sum(r["min_area"] for r in service)
             rest_area = sum(r["min_area"] for r in rest_rooms)
             svc_w = min(w * 0.38, max(w * 0.15, w * svc_area / rest_area))
-            placed += _pack_strip(service, x0 + w - svc_w, rest_y, svc_w, rest_h)
-            placed += _pack_strip(private, x0, rest_y, w - svc_w, rest_h)
+            placed += _pack_block(service, x0 + w - svc_w, rest_y, svc_w, rest_h)
+            placed += _pack_block(private, x0, rest_y, w - svc_w, rest_h)
         else:
-            placed += _pack_strip(rest_rooms, x0, rest_y, w, rest_h)
+            placed += _pack_block(rest_rooms, x0, rest_y, w, rest_h)
 
     return placed, {"width": width, "depth": depth}
 
 
-def _rects_adjacent(a: tuple, b: tuple) -> tuple | None:
-    """Return the shared-edge door spec if two rects share a boundary segment."""
+def _rects_adjacent(a: tuple, b: tuple, tol: float = 0.01) -> tuple | None:
+    """Return the shared-edge door spec if two rects share a boundary segment.
+
+    `tol` is the max distance between the touching edges — repairs can shift
+    rooms slightly off their original shared wall, so a looser tolerance
+    keeps doors near where walls used to be.
+    """
     ax0, ay0, ax1, ay1 = a
     bx0, by0, bx1, by1 = b
 
     candidates_v = []
-    if abs(ax1 - bx0) < 0.01:
+    if abs(ax1 - bx0) < tol:
         candidates_v.append((ax1, ay0, ay1, by0, by1))
-    if abs(bx1 - ax0) < 0.01:
+    if abs(bx1 - ax0) < tol:
         candidates_v.append((bx1, by0, by1, ay0, ay1))
     for e, lo1, hi1, lo2, hi2 in candidates_v:
         lo, hi = max(lo1, lo2), min(hi1, hi2)
@@ -158,9 +224,9 @@ def _rects_adjacent(a: tuple, b: tuple) -> tuple | None:
             return (round(e, 2), round((lo + hi) / 2, 2), "v")
 
     candidates_h = []
-    if abs(ay1 - by0) < 0.01:
+    if abs(ay1 - by0) < tol:
         candidates_h.append((ay1, ax0, ax1, bx0, bx1))
-    if abs(by1 - ay0) < 0.01:
+    if abs(by1 - ay0) < tol:
         candidates_h.append((by1, bx0, bx1, ax0, ax1))
     for e, lo1, hi1, lo2, hi2 in candidates_h:
         lo, hi = max(lo1, lo2), min(hi1, hi2)
@@ -186,6 +252,7 @@ def _openings(
     placed: list[dict],
     plot: dict,
     allow_pair: Callable[[dict, dict], bool] | None = None,
+    edge_tol: float = 0.01,
 ) -> tuple[list[dict], list[dict]]:
     """Derive doors on shared walls and windows on exterior walls.
 
@@ -202,7 +269,7 @@ def _openings(
         for j in range(i + 1, len(rects)):
             if placed[i].get("floor", 1) != placed[j].get("floor", 1):
                 continue
-            spec = _rects_adjacent(rects[i], rects[j])
+            spec = _rects_adjacent(rects[i], rects[j], edge_tol)
             if not spec:
                 continue
             adjacency_pairs.append((i, j))
@@ -233,11 +300,11 @@ def _openings(
                     continue
                 ox0, oy0, ox1, oy1 = other["_rect"]
                 if orientation == "v":
-                    if (abs(ox0 - e) < 0.01 or abs(ox1 - e) < 0.01) and oy0 < mid < oy1:
+                    if (abs(ox0 - e) < edge_tol or abs(ox1 - e) < edge_tol) and oy0 < mid < oy1:
                         interior = True
                         break
                 else:
-                    if (abs(oy0 - e) < 0.01 or abs(oy1 - e) < 0.01) and ox0 < mid < ox1:
+                    if (abs(oy0 - e) < edge_tol or abs(oy1 - e) < edge_tol) and ox0 < mid < ox1:
                         interior = True
                         break
             if not interior:
@@ -249,7 +316,7 @@ def _openings(
     return doors, windows
 
 
-def _ensure_connectivity(placed: list[dict], doors: list[dict]) -> None:
+def _ensure_connectivity(placed: list[dict], doors: list[dict], edge_tol: float = 0.01) -> None:
     """Guarantee every room can reach an entrance-side room by adding doors.
 
     BFS over placed-adjacency pairs that already have doors. Unreachable rooms
@@ -258,7 +325,7 @@ def _ensure_connectivity(placed: list[dict], doors: list[dict]) -> None:
     """
     rects = [r["_rect"] for r in placed]
     pairs = [
-        (i, j, _rects_adjacent(rects[i], rects[j]))
+        (i, j, _rects_adjacent(rects[i], rects[j], edge_tol))
         for i in range(len(rects))
         for j in range(i + 1, len(rects))
         if placed[i].get("floor", 1) == placed[j].get("floor", 1)
@@ -266,45 +333,64 @@ def _ensure_connectivity(placed: list[dict], doors: list[dict]) -> None:
     pairs = [(i, j, s) for i, j, s in pairs if s]
 
     def door_exists(i: int, j: int) -> bool:
-        spec = _rects_adjacent(rects[i], rects[j])
+        spec = _rects_adjacent(rects[i], rects[j], edge_tol)
         return spec is not None and any(
             d["x"] == spec[0] and d["y"] == spec[1] for d in doors
         )
 
-    def reach(seed_types: tuple[str, ...]) -> set[int]:
-        seeds = {i for i, r in enumerate(placed) if r.get("type") in seed_types}
-        if not seeds:
-            seeds = {0}
-        seen = set(seeds)
-        frontier = list(seeds)
-        while frontier:
-            cur = frontier.pop()
-            for i, j, _ in pairs:
-                other = j if i == cur else i if j == cur else None
-                if other is not None and other not in seen and door_exists(i, j):
-                    seen.add(other)
-                    frontier.append(other)
-        return seen
+    # Connectivity is checked per floor — there is no stair geometry, so an
+    # upper-floor room can only reach a landing-type room on its own floor.
+    LANDING_TYPES = ("entrance", "living", "hallway", "corridor", "stair")
+    floors = sorted({r.get("floor", 1) for r in placed})
+    for floor in floors:
+        floor_idxs = {i for i, r in enumerate(placed) if r.get("floor", 1) == floor}
+        if not floor_idxs:
+            continue
 
-    for _ in range(len(placed)):
-        reached = reach(("entrance", "living", "hallway"))
-        missing = [i for i in range(len(placed)) if i not in reached]
-        if not missing:
-            return
-        added = False
-        for i in missing:
-            neighbours = [(i, j, s) if a == i else (j, i, s) for a, j, s in pairs if a == i or j == i]
-            neighbours = [(a, b, s) for a, b, s in neighbours if a == i]
-            neighbours.sort(key=lambda t: _door_denied(placed[t[0]]["type"], placed[t[1]]["type"]))
-            for a, b, spec in neighbours:
-                floor = placed[i].get("floor", 1)
-                doors.append({"x": spec[0], "y": spec[1], "orientation": spec[2], "floor": floor})
+        def reach() -> set[int]:
+            seeds = {i for i in floor_idxs if placed[i].get("type") in LANDING_TYPES}
+            if not seeds:
+                seeds = {min(floor_idxs)}
+            seen = set(seeds)
+            frontier = list(seeds)
+            while frontier:
+                cur = frontier.pop()
+                for i, j, _ in pairs:
+                    if i not in floor_idxs:
+                        continue
+                    other = j if i == cur else i if j == cur else None
+                    if other is not None and other not in seen and door_exists(i, j):
+                        seen.add(other)
+                        frontier.append(other)
+            return seen
+
+        for _ in range(len(floor_idxs)):
+            reached = reach()
+            missing = sorted(floor_idxs - reached)
+            if not missing:
+                break
+            i = missing[0]
+            neighbours = [
+                (i, j if a == i else a, s)
+                for a, j, s in pairs
+                if a == i or j == i
+            ]
+            # Prefer doors into the reached component, then non-denied pairs.
+            neighbours.sort(
+                key=lambda t: (
+                    t[1] not in reached,
+                    _door_denied(placed[i].get("type", ""), placed[t[1]].get("type", "")),
+                )
+            )
+            added = False
+            for _, _, spec in neighbours:
+                doors.append(
+                    {"x": spec[0], "y": spec[1], "orientation": spec[2], "floor": floor}
+                )
                 added = True
                 break
-            if added:
+            if not added:
                 break
-        if not added:
-            return
 
 
 def _rotate_placed(placed: list[dict], plot: dict, quarter_turns: int) -> None:
@@ -381,6 +467,7 @@ def generate_candidates(program: dict[str, Any]) -> list[dict[str, Any]]:
 
     # For 90/270 orientations generate in transposed space then rotate back.
     layout_w, layout_d = (depth, width) if quarter_turns in (1, 3) else (width, depth)
+    margins = _layout_margins(quarter_turns, site.get("setbacks") or {})
 
     candidates = []
     base_score = 0.75
@@ -388,7 +475,11 @@ def generate_candidates(program: dict[str, Any]) -> list[dict[str, Any]]:
         placed: list[dict] = []
         for f, f_rooms in enumerate(floor_rooms, start=1):
             f_placed, plot = _layout_rooms(
-                [dict(r) for r in f_rooms], layout_w, layout_d, seed=42 + i * 997 + f * 131
+                [dict(r) for r in f_rooms],
+                layout_w,
+                layout_d,
+                seed=42 + i * 997 + f * 131,
+                margins=margins,
             )
             for r in f_placed:
                 r["floor"] = f
